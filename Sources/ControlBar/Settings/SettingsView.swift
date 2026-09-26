@@ -353,7 +353,7 @@ private struct AboutTab: View {
                 HStack(spacing: 12) {
                     Image(nsImage: Bundle.main.image(forResource: "AppIcon") ?? NSApp.applicationIconImage)
                         .resizable().frame(width: 40, height: 40)
-                    Text("BeanOn").font(.custom("Exo 2", size: 26).weight(.heavy)).foregroundStyle(Brand.paper)
+                    Text("ControlBar").font(.custom("Exo 2", size: 26).weight(.heavy)).foregroundStyle(Brand.paper)
                     Text("v\(version)")
                         .font(.caption.bold())
                         .padding(.horizontal, 8).padding(.vertical, 2)
