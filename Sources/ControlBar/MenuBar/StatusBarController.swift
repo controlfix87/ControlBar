@@ -435,7 +435,7 @@ final class StatusBarController: NSObject {
             return item
         }
 
-        menu.addItem(NSMenuItem.sectionHeader(title: "BeanOn"))
+        menu.addItem(NSMenuItem.sectionHeader(title: "Keep Awake"))
         let status = NSMenuItem(title: "Keep Awake: \(sleep.statusDescription)", action: nil, keyEquivalent: "")
         status.isEnabled = false
         menu.addItem(icon(status, "moon.zzz"))
