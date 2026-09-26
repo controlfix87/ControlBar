@@ -10,7 +10,7 @@ A macOS menu bar app that does two things:
 
 User decisions (don't re-ask):
 - **Minimum macOS 14.** The user's Mac runs macOS 26.5 (Tahoe) on a notched MacBook, with an external Dell display.
-- **It will be open source** (MIT). `LICENSE` holds a placeholder copyright line, "The ControlBar contributors".
+- **Proprietary, private repo.** `LICENSE` is an all-rights-reserved notice for ControlFix (the repo was briefly planned as MIT open source; the user decided against it). Builds are distributed as zips from the ControlFix site.
 - **Credit `dwarvesf/hidden` only if code is actually copied from it.** Nothing has been copied so far; we only use the idea of a divider that expands to push icons off-screen. If you copy code from it, add attribution in README and LICENSE.
 - The project lives in `~/perch-temp`. "ControlBar" is a temporary name.
 - Latest request, already implemented: the ┃ divider should be **visible while the strip is shown**.
@@ -106,7 +106,7 @@ pkill -x ControlBar; open build/ControlBar.app
 3. The hotkey recorder: while recording, the currently registered Carbon hotkey still fires. Consider pausing it during recording.
 4. Multi-display: the active menu bar can be on the Dell (y = -1080 in CG coordinates). The scanning and hidden filter handle this (same-row check with a 30 pt tolerance). The strip is anchored to `chevronWindow.screen` and hasn't been tested on the external display.
 5. Rename from "ControlBar" / `com.controlfix.bar` when the user picks a final name. Places to change: `Info.plist`, `Package.swift`, the scripts, the README, the autosave names `controlbar.*`, and the signing identity name.
-6. Open-source polish once the user wants it: first commit, GitHub repo, CI build, a universal build (`UNIVERSAL=1`), and notarization (which needs a Developer ID; the local certificate is for development only).
+6. Release polish once the user wants it: CI build, a universal build (`UNIVERSAL=1`), and notarization (which needs a Developer ID; the local certificate is for development only).
 7. **TODO (blocked on the user joining the paid Apple Developer Program, $99/yr): proper signing + notarization.**
    - Create a *Developer ID Application* certificate and install it in the login keychain of the build Mac; set `PERCH_SIGN_IDENTITY` (or update `scripts/build.sh`) to use it, with `--options runtime` and a secure timestamp instead of `--timestamp=none`.
    - Add notarization to the release flow: zip with `ditto`, `xcrun notarytool submit --wait` (App Store Connect API key or app-specific password via keychain profile), then `xcrun stapler staple` the `.app` and re-zip.

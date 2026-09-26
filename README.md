@@ -1,6 +1,6 @@
 # ControlBar
 
-A small, open-source macOS menu bar app that does two things:
+A small macOS menu bar app that does two things:
 
 1. **Keep awake.** It stops your Mac from idle-sleeping, like Caffeine or `caffeinate`: indefinitely or for 15 min to 8 h, with or without keeping the display on.
 2. **Hidden icons strip.** It hides the menu bar icons you don't need all the time. One click (or a shortcut) shows them in a strip just below the menu bar. The strip hides itself after 5 seconds, when you click outside it, or when you press Esc.
@@ -26,7 +26,7 @@ Requires macOS 14 Sonoma or later (tested on macOS 26 Tahoe).
 
 - **Choosing what to hide:** choose *Arrange Menu Bar Icons…*, then hold **⌘** and drag icons to the left of the ┃ divider to hide them, or to its right to keep them visible. Click ✓ when you're done.
 - **Opening a hidden icon:** click it in the strip. ControlBar briefly reveals the real icon and presses it, so its menu opens where it normally would. Right-click an icon in the strip to send it a right-click.
-- **Shortcut:** ⌥⌘B by default (change it in Settings → General).
+- **Shortcut:** ⌃⌥⌘H by default (change it in Settings → General).
 
 On first launch ControlBar puts its icons at the right end of the menu bar, so on a crowded MacBook they aren't stuck behind the notch. Every other icon starts out hidden; drag your favourites back to the right of the divider.
 
@@ -79,4 +79,4 @@ Sources/ControlBar/
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+Copyright (c) 2026 ControlFix. All rights reserved, see [LICENSE](LICENSE).
