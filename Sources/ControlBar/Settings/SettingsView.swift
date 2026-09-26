@@ -370,7 +370,7 @@ private struct AboutTab: View {
             .frame(height: 120)
 
             VStack(spacing: 10) {
-                Text("Keep your Mac awake and tuck menu bar icons away.\nOpen source (MIT).")
+                Text("Keep your Mac awake and tuck menu bar icons away.")
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 Divider().padding(.vertical, 2)
                 Text("Built and maintained by ControlFix.")
