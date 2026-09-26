@@ -169,6 +169,13 @@ final class StatusBarController: NSObject {
     private static func seedInitialPositions() {
         let defaults = UserDefaults.standard
         let prefix = "NSStatusItem Preferred Position "
+        // Older builds hid the divider with `isVisible = false`, which macOS remembers (and drops the item's
+        // saved position for). Undo that, and slot the divider right next to the chevron.
+        let dividerKey = prefix + "controlbar.divider"
+        if let chevron = defaults.object(forKey: prefix + "controlbar.chevron") as? Double, defaults.object(forKey: dividerKey) == nil {
+            defaults.set(chevron + 1, forKey: dividerKey)
+        }
+        defaults.removeObject(forKey: "NSStatusItem VisibleCC controlbar.divider")
         let initial: [(String, Double)] = [("controlbar.keepawake", 0), ("controlbar.chevron", 1), ("controlbar.divider", 2), ("controlbar.expander", 3)]
         guard initial.allSatisfy({ defaults.object(forKey: prefix + $0.0) == nil }) else { return }
         for (name, position) in initial {
@@ -250,8 +257,13 @@ final class StatusBarController: NSObject {
         updateDividerVisibility()
     }
 
+    /// The item is never removed from the menu bar: toggling `isVisible` makes macOS 26 re-insert it at the
+    /// far left, inside the region the expander pushes off-screen, so the ┃ never came back. Collapsing it to
+    /// zero length keeps its slot next to the chevron.
     private func updateDividerVisibility() {
-        dividerItem.isVisible = !isHidingItems || showsDividerWhileHidden
+        let show = !isHidingItems || showsDividerWhileHidden
+        dividerItem.length = show ? Self.dividerLength : 0
+        dividerItem.button?.image = show ? Self.dividerImage : nil
     }
 
     // MARK: - Clicks
