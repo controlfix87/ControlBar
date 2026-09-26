@@ -75,6 +75,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        if !Permissions.screenRecording { Permissions.requestScreenRecording() }
+
         if !prefs.didShowWelcome || !Permissions.accessibility {
             prefs.didShowWelcome = true
             openSettings(tab: .permissions)

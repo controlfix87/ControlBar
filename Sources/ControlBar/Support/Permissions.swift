@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import ScreenCaptureKit
 
 /// The two privacy permissions the hidden-icons strip relies on.
 enum Permissions {
@@ -29,8 +30,12 @@ enum Permissions {
         _ = AXIsProcessTrustedWithOptions(options)
     }
 
+    /// On recent macOS an app is only listed under Privacy → Screen & System Audio Recording once it has
+    /// actually tried to capture with ScreenCaptureKit, which is what the icon capturer uses. So besides the
+    /// classic request, make a real (harmless) ScreenCaptureKit call to register the app in that list.
     static func requestScreenRecording() {
         _ = CGRequestScreenCaptureAccess()
+        Task { _ = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true) }
     }
 
     static func openPrivacyPane(_ anchor: String) {
