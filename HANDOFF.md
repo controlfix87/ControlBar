@@ -105,7 +105,7 @@ pkill -x ControlBar; open build/ControlBar.app
 2. Consider revealing only the clicked item, the way Ice moves a single item with synthetic ⌘-drags, instead of the whole hidden section. That's only worth doing if the user dislikes the flash.
 3. The hotkey recorder: while recording, the currently registered Carbon hotkey still fires. Consider pausing it during recording.
 4. Multi-display: the active menu bar can be on the Dell (y = -1080 in CG coordinates). The scanning and hidden filter handle this (same-row check with a 30 pt tolerance). The strip is anchored to `chevronWindow.screen` and hasn't been tested on the external display.
-5. Rename from "ControlBar" / `net.controlfix.ControlBar` when the user picks a final name. Places to change: `Info.plist`, `Package.swift`, the scripts, the README, the autosave names `controlbar.*`, and the signing identity name.
+5. Rename from "ControlBar" / `com.controlfix.bar` when the user picks a final name. Places to change: `Info.plist`, `Package.swift`, the scripts, the README, the autosave names `controlbar.*`, and the signing identity name.
 6. Open-source polish once the user wants it: first commit, GitHub repo, CI build, a universal build (`UNIVERSAL=1`), and notarization (which needs a Developer ID; the local certificate is for development only).
 
 ## Memory

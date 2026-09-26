@@ -7,7 +7,7 @@
 	<key>CFBundleExecutable</key>
 	<string>ControlBar</string>
 	<key>CFBundleIdentifier</key>
-	<string>net.controlfix.ControlBar</string>
+	<string>com.controlfix.bar</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
