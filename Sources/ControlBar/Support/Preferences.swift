@@ -32,12 +32,12 @@ enum MenuShortcut: String, CaseIterable {
     }
 
     var defaultCombo: KeyCombo {
-        let cmd = UInt32(cmdKey), opt = UInt32(optionKey)
+        let cmd = UInt32(cmdKey), shift = UInt32(shiftKey)
         switch self {
-        case .toggle: return KeyCombo(keyCode: UInt32(kVK_ANSI_B), carbonModifiers: cmd)
-        case .duration: return KeyCombo(keyCode: UInt32(kVK_ANSI_T), carbonModifiers: cmd)
-        case .display: return KeyCombo(keyCode: UInt32(kVK_ANSI_A), carbonModifiers: cmd | opt)
-        case .arrange: return KeyCombo(keyCode: UInt32(kVK_ANSI_R), carbonModifiers: cmd)
+        case .toggle: return KeyCombo(keyCode: UInt32(kVK_ANSI_K), carbonModifiers: cmd)
+        case .duration: return KeyCombo(keyCode: UInt32(kVK_ANSI_D), carbonModifiers: cmd)
+        case .display: return KeyCombo(keyCode: UInt32(kVK_ANSI_D), carbonModifiers: cmd | shift)
+        case .arrange: return KeyCombo(keyCode: UInt32(kVK_ANSI_A), carbonModifiers: cmd)
         case .settings: return KeyCombo(keyCode: UInt32(kVK_ANSI_Comma), carbonModifiers: cmd)
         case .about: return KeyCombo(keyCode: UInt32(kVK_ANSI_I), carbonModifiers: cmd)
         case .quit: return KeyCombo(keyCode: UInt32(kVK_ANSI_Q), carbonModifiers: cmd)

@@ -9,4 +9,6 @@ enum Brand {
     static let teal = Color(red: 0x17 / 255, green: 0xB3 / 255, blue: 0xA4 / 255)
     static let tealDeep = Color(red: 0x0E / 255, green: 0x8E / 255, blue: 0x93 / 255)
     static let navy = Color(red: 0x10 / 255, green: 0x1D / 255, blue: 0x33 / 255)
+    static let ink = Color(red: 0x07 / 255, green: 0x0C / 255, blue: 0x17 / 255)
+    static let paper = Color(red: 0xE9 / 255, green: 0xF2 / 255, blue: 0xF7 / 255)
 }

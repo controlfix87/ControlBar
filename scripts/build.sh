@@ -3,6 +3,7 @@
 #
 #   scripts/build.sh              # release build for this Mac's architecture
 #   UNIVERSAL=1 scripts/build.sh  # arm64 + x86_64
+#   ARCH=arm64|x86_64 scripts/build.sh   # single-architecture build (release zips)
 #   CONFIG=debug scripts/build.sh
 #
 # Signs with the "Perch Local Signing" identity when present (see make-signing-cert.sh) so
@@ -14,6 +15,8 @@ CONFIG="${CONFIG:-release}"
 ARCH_FLAGS=()
 if [[ "${UNIVERSAL:-0}" == "1" ]]; then
   ARCH_FLAGS=(--arch arm64 --arch x86_64)
+elif [[ -n "${ARCH:-}" ]]; then
+  ARCH_FLAGS=(--arch "$ARCH")
 fi
 
 swift build -c "$CONFIG" ${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"}
