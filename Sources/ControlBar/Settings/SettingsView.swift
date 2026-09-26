@@ -353,7 +353,11 @@ private struct AboutTab: View {
                 HStack(spacing: 12) {
                     Image(nsImage: Bundle.main.image(forResource: "AppIcon") ?? NSApp.applicationIconImage)
                         .resizable().frame(width: 40, height: 40)
-                    Text("ControlBar").font(.custom("Exo 2", size: 26).weight(.heavy)).foregroundStyle(Brand.paper)
+                    HStack(alignment: .top, spacing: 2) {
+                        Text("ControlBar").font(.custom("Exo 2", size: 26).weight(.heavy))
+                        Text("©").font(.system(size: 11, weight: .semibold)).padding(.top, 2)
+                    }
+                    .foregroundStyle(Brand.paper)
                     Text("v\(version)")
                         .font(.caption.bold())
                         .padding(.horizontal, 8).padding(.vertical, 2)
@@ -398,6 +402,8 @@ private struct AboutTab: View {
                         .background(Brand.lime).foregroundStyle(Brand.ink)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
+                Text("All rights reserved to ControlFix 2026")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             .padding(20)
         }
