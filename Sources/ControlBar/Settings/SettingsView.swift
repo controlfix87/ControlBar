@@ -366,7 +366,7 @@ private struct AboutTab: View {
             .frame(height: 120)
 
             VStack(spacing: 10) {
-                Text("Keep your Mac awake and tuck menu bar icons away. Open source (MIT), built and maintained by ControlFix.")
+                Text("Keep your Mac awake and tuck menu bar icons away.\nOpen source (MIT), built and maintained by ControlFix.")
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 Link(destination: URL(string: "https://controlfix.net")!) {
                     Label("Visit controlfix.net", systemImage: "arrow.up.right.square")
