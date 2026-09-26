@@ -3,32 +3,50 @@
 A small macOS menu bar app that does two things:
 
 1. **Keep awake.** It stops your Mac from idle-sleeping, like Caffeine or `caffeinate`: indefinitely or for 15 min to 8 h, with or without keeping the display on.
-2. **Hidden icons strip.** It hides the menu bar icons you don't need all the time. One click (or a shortcut) shows them in a strip just below the menu bar. The strip hides itself after 5 seconds, when you click outside it, or when you press Esc.
+2. **Hidden icons strip.** It hides the menu bar icons you don't need all the time. One click (or a shortcut) shows them in a strip just below the menu bar. The strip hides itself after a delay (7 s by default), when you click outside it, or when you press Esc.
 
 ```
  ┌──────────────────────────────── menu bar ─────────────────────────────────┐
- │  File  Edit  View                         ┃ ⌄ ☕  Wi-Fi  🔋  Mon 12:00   │
+ │  File  Edit  View                         ┃ ◔ ☕  Wi-Fi  🔋  Mon 12:00   │
  └───────────────────────────────────────────────────────────────────────────┘
                                    ╭───────────────────────╮
                                    │  ⚙︎  ☁︎  🎧  📋  🔒  │  ← hidden icons, clickable
                                    ╰───────────────────────╯
 ```
 
-Requires macOS 14 Sonoma or later (tested on macOS 26 Tahoe).
+Requires macOS 14 Sonoma or later (tested on macOS 26 Tahoe). Downloads for Apple Silicon and Intel are on the ControlFix site: <https://controlfix.net/projects/mac-apps>. The app is not notarized yet, so on first launch right-click it and choose **Open**.
 
 ## Using it
 
 | Icon | Click | Right-click |
 |---|---|---|
-| ☕ cup | Toggle keep-awake | Durations, display option, settings |
-| ⌄ chevron | Show the hidden-icons strip | Same menu (⌥-click: arrange icons) |
-| ┃ divider | *(only visible while arranging)* | Same menu |
+| ☕ coffee bean | Toggle keep-awake | The ControlBar menu |
+| ◔ dial | Show the hidden-icons strip | The ControlBar menu (⌥-click: arrange icons) |
+| ┃ divider | The ControlBar menu | The ControlBar menu |
+
+The ┃ divider is only in the menu bar while the strip is open or while you are arranging icons.
 
 - **Choosing what to hide:** choose *Arrange Menu Bar Icons…*, then hold **⌘** and drag icons to the left of the ┃ divider to hide them, or to its right to keep them visible. Click ✓ when you're done.
 - **Opening a hidden icon:** click it in the strip. ControlBar briefly reveals the real icon and presses it, so its menu opens where it normally would. Right-click an icon in the strip to send it a right-click.
-- **Shortcut:** ⌃⌥⌘H by default (change it in Settings → General).
+- **Keep awake:** turn it on from the coffee-bean icon or the menu. *Keep Awake For* offers Indefinitely, 15 / 30 minutes, and 1 / 2 / 4 / 8 hours; the default time, *Keep screen on* and *Turn on at launch* are in Settings → Keep Awake.
+- **Settings:** General (launch at login, which icons to show, brand colours), Keep Awake, Hidden Icons (hide delay, icon size, hide on outside click, hover pause), Shortcuts, Permissions and About (with *Copy Diagnostics* for bug reports).
 
-On first launch ControlBar puts its icons at the right end of the menu bar, so on a crowded MacBook they aren't stuck behind the notch. Every other icon starts out hidden; drag your favourites back to the right of the divider.
+### Shortcuts
+
+Menu shortcuts work while the ControlBar menu is open and can be re-assigned in Settings → Shortcuts. Show hidden icons is a global hotkey (change it in Settings → General).
+
+| Action | Default |
+|---|---|
+| Turn keep awake on/off | ⌘K |
+| Keep awake for… | ⌘D |
+| Keep screen on | ⇧⌘D |
+| Arrange icons | ⌘A |
+| Settings | ⌘, |
+| About | ⌘I |
+| Quit | ⌘Q |
+| Show hidden icons (global) | ⌃⌥⌘H |
+
+On first launch ControlBar puts its icons at the right end of the menu bar, so on a crowded MacBook they aren't stuck behind the notch. Every other icon starts out hidden; drag your favourites back to the right of the divider. The *Permissions…* item in the menu appears only while a permission is still missing.
 
 ## Permissions
 
@@ -37,7 +55,7 @@ On first launch ControlBar puts its icons at the right end of the menu bar, so o
 | **Accessibility** | Find hidden menu bar icons, read their positions and press them. |
 | **Screen Recording** | Capture pictures of the hidden icons for the strip. Without it, the strip shows each app's icon instead. |
 
-ControlBar never records your screen. It only captures the small menu bar icons it shows. Keep-awake needs no permissions.
+ControlBar never records your screen. It only captures the small menu bar icons it shows. Keep-awake needs no permissions. Bundle identifier: `com.controlfix.bar`.
 
 ## Building
 
@@ -47,7 +65,7 @@ scripts/build.sh               # builds build/ControlBar.app
 open build/ControlBar.app
 ```
 
-`make-signing-cert.sh` is optional, but without it every rebuild is signed ad-hoc and macOS forgets the permissions you granted. Use `UNIVERSAL=1 scripts/build.sh` for an arm64 + x86_64 build. `swift scripts/make-icon.swift` regenerates the app icon.
+`make-signing-cert.sh` is optional, but without it every rebuild is signed ad-hoc and macOS forgets the permissions you granted. Use `UNIVERSAL=1 scripts/build.sh` for an arm64 + x86_64 build, or `ARCH=arm64` / `ARCH=x86_64` for a single architecture. `swift scripts/make-icon.swift` regenerates the app icon.
 
 Troubleshooting: *Settings → About → Copy Diagnostics* produces a report of what ControlBar sees in the menu bar. You can also run `open build/ControlBar.app --args --diagnose /tmp/controlbar-diag`, which writes `report.txt` plus the captured icon images to that folder and then quits.
 
