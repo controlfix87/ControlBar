@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         statusBar.onShowStrip = { [weak self] in self?.strip.toggle() }
         statusBar.onOpenSettings = { [weak self] in self?.openSettings() }
+        statusBar.onOpenAbout = { [weak self] in self?.openSettings(tab: .about) }
         strip.onOpenPermissions = { [weak self] in self?.openSettings(tab: .permissions) }
         statusBar.onArrangingChanged = { [weak self] arranging in
             guard let self else { return }

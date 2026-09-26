@@ -6,7 +6,7 @@ struct KeyCombo: Equatable {
     var keyCode: UInt32
     var carbonModifiers: UInt32
 
-    static let `default` = KeyCombo(keyCode: UInt32(kVK_ANSI_C), carbonModifiers: UInt32(cmdKey | shiftKey))
+    static let `default` = KeyCombo(keyCode: UInt32(kVK_ANSI_H), carbonModifiers: UInt32(controlKey | optionKey | cmdKey))
 
     init(keyCode: UInt32, carbonModifiers: UInt32) {
         self.keyCode = keyCode

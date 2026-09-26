@@ -344,34 +344,37 @@ private struct AboutTab: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Brand banner — navy→ink ground, the mark, and a version pill, the way the other
-            // ControlFix-design-system apps (e.g. Translarr) present their About screen.
-            ZStack {
-                LinearGradient(colors: [Brand.navy, .black], startPoint: .topLeading, endPoint: .bottomTrailing)
+            // Brand banner (ControlFix About pattern): navy→ink ground, mark + name + version pill
+            // pinned bottom-left, with a scrim fading into the surface below.
+            ZStack(alignment: .bottomLeading) {
+                LinearGradient(colors: [Brand.navy, Brand.ink], startPoint: .top, endPoint: .bottom)
+                LinearGradient(colors: [.clear, Color(nsColor: .windowBackgroundColor)], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 48)
                 HStack(spacing: 12) {
-                    Image(nsImage: Bundle.main.image(forResource: "AppIcon") ?? NSApp.applicationIconImage).resizable().frame(width: 52, height: 52)
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 6) {
-                            Text("ControlBar").font(.system(size: 20, weight: .heavy)).foregroundStyle(.white)
-                            Text("v\(version)")
-                                .font(.caption.bold())
-                                .padding(.horizontal, 6).padding(.vertical, 2)
-                                .background(Brand.teal.opacity(0.25))
-                                .foregroundStyle(Brand.mint)
-                                .clipShape(Capsule())
-                        }
-                        Text("Keep your Mac awake. Hide menu bar icons.")
-                            .font(.caption).foregroundStyle(.white.opacity(0.7))
-                    }
-                    Spacer(minLength: 0)
+                    Image(nsImage: Bundle.main.image(forResource: "AppIcon") ?? NSApp.applicationIconImage)
+                        .resizable().frame(width: 40, height: 40)
+                    Text("BeanOn").font(.custom("Exo 2", size: 26).weight(.heavy)).foregroundStyle(Brand.paper)
+                    Text("v\(version)")
+                        .font(.caption.bold())
+                        .padding(.horizontal, 8).padding(.vertical, 2)
+                        .background(Brand.teal.opacity(0.25))
+                        .foregroundStyle(Brand.mint)
+                        .clipShape(Capsule())
                 }
-                .padding(16)
+                .padding(.horizontal, 20).padding(.bottom, 14)
             }
-            .frame(height: 92)
+            .frame(height: 120)
 
             VStack(spacing: 10) {
-                Text("Open source · MIT License")
-                    .font(.callout).foregroundStyle(.secondary)
+                Text("Keep your Mac awake and tuck menu bar icons away. Open source (MIT), built and maintained by ControlFix.")
+                    .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                Link(destination: URL(string: "https://controlfix.net")!) {
+                    Label("Visit controlfix.net", systemImage: "arrow.up.right.square")
+                        .font(.callout.weight(.semibold))
+                        .padding(.horizontal, 14).padding(.vertical, 6)
+                        .background(Brand.lime).foregroundStyle(Brand.ink)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
                 Divider().padding(.vertical, 2)
                 HStack {
                     Button(copied ? "Copied!" : "Copy Diagnostics") {

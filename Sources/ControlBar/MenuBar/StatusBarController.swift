@@ -27,6 +27,7 @@ final class StatusBarController: NSObject {
     var onShowStrip: (() -> Void)?
     var onArrangingChanged: ((Bool) -> Void)?
     var onOpenSettings: (() -> Void)?
+    var onOpenAbout: (() -> Void)?
     var onInvalidOrder: (() -> Void)?
     /// Called instead of ending arrange mode directly, so pictures can be captured while icons are still visible.
     var onEndArrangingRequested: (() -> Void)?
@@ -60,8 +61,18 @@ final class StatusBarController: NSObject {
                 NSPoint(x: c.x + r * k * cos(deg * .pi / 180), y: c.y + r * k * sin(deg * .pi / 180))
             }
             let angle: CGFloat = 50
-            (brand ? NSColor(Brand.lime) : NSColor.black).setFill()
-            NSBezierPath(ovalIn: NSRect(x: c.x - 6.6 * k, y: c.y - 6.6 * k, width: 13.2 * k, height: 13.2 * k)).fill()
+            let dial = NSBezierPath(ovalIn: NSRect(x: c.x - 6.6 * k, y: c.y - 6.6 * k, width: 13.2 * k, height: 13.2 * k))
+            if brand {
+                // Same look as the app icon: navy dial with a steel ring.
+                NSColor(Brand.navy).setFill()
+                dial.fill()
+                NSColor(red: 0x7F / 255, green: 0xA0 / 255, blue: 0xB3 / 255, alpha: 1).setStroke()
+                dial.lineWidth = 1.4 * k
+                dial.stroke()
+            } else {
+                NSColor.black.setFill()
+                dial.fill()
+            }
             let pointer = NSBezierPath()
             pointer.lineWidth = 1.7 * k
             pointer.lineCapStyle = .round
@@ -412,7 +423,7 @@ final class StatusBarController: NSObject {
             return item
         }
 
-        menu.addItem(NSMenuItem.sectionHeader(title: "BeanUp"))
+        menu.addItem(NSMenuItem.sectionHeader(title: "BeanOn"))
         let status = NSMenuItem(title: "Keep Awake: \(sleep.statusDescription)", action: nil, keyEquivalent: "")
         status.isEnabled = false
         menu.addItem(icon(status, "moon.zzz"))
@@ -447,10 +458,7 @@ final class StatusBarController: NSObject {
             if self.isArranging { self.requestEndArranging() } else { self.setArranging(true) }
         }, .arrange), "rectangle.3.group"))
         menu.addItem(icon(key(ClosureMenuItem("Settings…") { [weak self] in self?.onOpenSettings?() }, .settings), "gearshape"))
-        menu.addItem(icon(key(ClosureMenuItem("About") {
-            NSApp.activate(ignoringOtherApps: true)
-            NSApp.orderFrontStandardAboutPanel(nil)
-        }, .about), "info.circle"))
+        menu.addItem(icon(key(ClosureMenuItem("About") { [weak self] in self?.onOpenAbout?() }, .about), "info.circle"))
         menu.addItem(.separator())
         menu.addItem(icon(key(ClosureMenuItem("Quit ControlBar") { NSApp.terminate(nil) }, .quit), "xmark.circle"))
         return menu
