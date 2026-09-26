@@ -28,6 +28,7 @@ final class StatusBarController: NSObject {
     var onArrangingChanged: ((Bool) -> Void)?
     var onOpenSettings: (() -> Void)?
     var onOpenAbout: (() -> Void)?
+    var onOpenPermissions: (() -> Void)?
     var onInvalidOrder: (() -> Void)?
     /// Called instead of ending arrange mode directly, so pictures can be captured while icons are still visible.
     var onEndArrangingRequested: (() -> Void)?
@@ -470,6 +471,10 @@ final class StatusBarController: NSObject {
             if self.isArranging { self.requestEndArranging() } else { self.setArranging(true) }
         }, .arrange), "rectangle.3.group"))
         menu.addItem(icon(key(ClosureMenuItem("Settings…") { [weak self] in self?.onOpenSettings?() }, .settings), "gearshape"))
+        // Only shown while something is still missing; the menu is rebuilt each time it opens.
+        if !(Permissions.accessibility && Permissions.screenRecording) {
+            menu.addItem(icon(ClosureMenuItem("Permissions…") { [weak self] in self?.onOpenPermissions?() }, "lock.shield"))
+        }
         menu.addItem(icon(key(ClosureMenuItem("About") { [weak self] in self?.onOpenAbout?() }, .about), "info.circle"))
         menu.addItem(.separator())
         menu.addItem(icon(key(ClosureMenuItem("Quit ControlBar") { NSApp.terminate(nil) }, .quit), "xmark.circle"))
