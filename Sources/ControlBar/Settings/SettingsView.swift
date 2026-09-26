@@ -371,13 +371,6 @@ private struct AboutTab: View {
                 Divider().padding(.vertical, 2)
                 Text("Built and maintained by ControlFix.")
                     .font(.callout).foregroundStyle(.secondary)
-                Link(destination: URL(string: "https://controlfix.net")!) {
-                    Label("Visit controlfix.net", systemImage: "arrow.up.right.square")
-                        .font(.callout.weight(.semibold))
-                        .padding(.horizontal, 14).padding(.vertical, 6)
-                        .background(Brand.lime).foregroundStyle(Brand.ink)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
                 HStack {
                     Button(copied ? "Copied!" : "Copy Diagnostics") {
                         Task {
@@ -398,6 +391,13 @@ private struct AboutTab: View {
                     .background(Color(nsColor: .textBackgroundColor).opacity(0.5))
                 }
                 Spacer(minLength: 0)
+                Link(destination: URL(string: "https://controlfix.net")!) {
+                    Label("Visit controlfix.net", systemImage: "arrow.up.right.square")
+                        .font(.callout.weight(.semibold))
+                        .padding(.horizontal, 14).padding(.vertical, 6)
+                        .background(Brand.lime).foregroundStyle(Brand.ink)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
             }
             .padding(20)
         }
