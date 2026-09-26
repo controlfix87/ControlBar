@@ -107,6 +107,13 @@ pkill -x ControlBar; open build/ControlBar.app
 4. Multi-display: the active menu bar can be on the Dell (y = -1080 in CG coordinates). The scanning and hidden filter handle this (same-row check with a 30 pt tolerance). The strip is anchored to `chevronWindow.screen` and hasn't been tested on the external display.
 5. Rename from "ControlBar" / `com.controlfix.bar` when the user picks a final name. Places to change: `Info.plist`, `Package.swift`, the scripts, the README, the autosave names `controlbar.*`, and the signing identity name.
 6. Open-source polish once the user wants it: first commit, GitHub repo, CI build, a universal build (`UNIVERSAL=1`), and notarization (which needs a Developer ID; the local certificate is for development only).
+7. **TODO (blocked on the user joining the paid Apple Developer Program, $99/yr): proper signing + notarization.**
+   - Create a *Developer ID Application* certificate and install it in the login keychain of the build Mac; set `PERCH_SIGN_IDENTITY` (or update `scripts/build.sh`) to use it, with `--options runtime` and a secure timestamp instead of `--timestamp=none`.
+   - Add notarization to the release flow: zip with `ditto`, `xcrun notarytool submit --wait` (App Store Connect API key or app-specific password via keychain profile), then `xcrun stapler staple` the `.app` and re-zip.
+   - Rebuild both release zips (`ARCH=arm64` and `ARCH=x86_64`, or a universal one), re-upload with `gh release upload --clobber`, and verify with `spctl -a -vv`.
+   - Remove the "right-click → Open" note from the site's Mac Apps page (`downloadHint` in the portfolio's `translations.ts`, EN + HE) and from the release notes.
+   - Note: building over SSH can't reach the login keychain; run the build in a GUI Terminal session on the Mac.
+   - Changing the signing identity may reset users' Accessibility / Screen Recording grants once.
 
 ## Memory
 A project memory was saved (`controlbar-project`) covering location, constraints, the credit rule and the macOS 26 ownership quirk.
