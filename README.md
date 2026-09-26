@@ -5,16 +5,20 @@ A small macOS menu bar app that does two things:
 1. **Keep awake.** It stops your Mac from idle-sleeping, like Caffeine or `caffeinate`: indefinitely or for 15 min to 8 h, with or without keeping the display on.
 2. **Hidden icons strip.** It hides the menu bar icons you don't need all the time. One click (or a shortcut) shows them in a strip just below the menu bar. The strip hides itself after a delay (7 s by default), when you click outside it, or when you press Esc.
 
-```
- ┌──────────────────────────────── menu bar ─────────────────────────────────┐
- │  File  Edit  View                         ┃ ◔ ☕  Wi-Fi  🔋  Mon 12:00   │
- └───────────────────────────────────────────────────────────────────────────┘
-                                   ╭───────────────────────╮
-                                   │  ⚙︎  ☁︎  🎧  📋  🔒  │  ← hidden icons, clickable
-                                   ╰───────────────────────╯
-```
+![The hidden-icons strip below the menu bar](docs/screenshots/strip.png)
 
 Requires macOS 14 Sonoma or later (tested on macOS 26 Tahoe). Downloads for Apple Silicon and Intel are on the ControlFix site: <https://controlfix.net/projects/mac-apps>. The app is not notarized yet, so on first launch right-click it and choose **Open**.
+
+## Screenshots
+
+| | |
+|---|---|
+| ![The ControlBar menu](docs/screenshots/menu.png) | ![Keep Awake settings](docs/screenshots/keep-awake.png) |
+| The menu, with its shortcuts | Settings → Keep Awake |
+| ![Hidden Icons settings](docs/screenshots/hidden-icons.png) | ![Shortcuts settings](docs/screenshots/shortcuts.png) |
+| Settings → Hidden Icons | Settings → Shortcuts |
+| ![The About screen](docs/screenshots/about.png) | |
+| Settings → About | |
 
 ## Using it
 
