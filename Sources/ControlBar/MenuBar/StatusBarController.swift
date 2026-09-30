@@ -9,6 +9,10 @@ import SwiftUI
 ///                     │   └ chevron: the ControlBar logo + chevron in one icon; opens the strip
 ///                     └ divider: grows to 10,000 pt to push everything on its left off-screen
 ///
+/// The divider is the *only* item that pushes: whatever the user ⌘-drags to its left is hidden, no
+/// matter where they put it. (An earlier design pushed with a second, invisible item that macOS never
+/// kept next to the visible ┃, so icons dragged "left of the ┃" often stayed visible.)
+///
 /// Status items are created right-to-left, so creating keep-awake first puts the divider leftmost.
 @MainActor
 final class StatusBarController: NSObject {
@@ -19,10 +23,13 @@ final class StatusBarController: NSObject {
     private let sleep: SleepPreventer
     private let keepAwakeItem: NSStatusItem
     private let chevronItem: NSStatusItem
+    /// The ┃ divider. Stretches to `hiddenLength` to push everything on its left off-screen.
     private let dividerItem: NSStatusItem
-    /// Invisible item just left of the divider; it is the one that stretches to push icons off-screen.
-    private let expanderItem: NSStatusItem
+    /// Draws the ┃ at the hide boundary while the strip is open (the stretched item's own glyph is off-screen).
+    private let dividerMark = DividerMarkPanel()
     private var cancellables = Set<AnyCancellable>()
+    /// Ticks the keep-awake countdown label while a timed session is active.
+    private var countdownTimer: Timer?
 
     var onShowStrip: (() -> Void)?
     var onArrangingChanged: ((Bool) -> Void)?
@@ -39,11 +46,15 @@ final class StatusBarController: NSObject {
     private(set) var isHidingItems = false
     /// Nested temporary reveals (e.g. while a hidden item's menu is open).
     private var revealCount = 0
+    /// How many times `applyState()` has retried a hide that `isOrderValid` blocked.
+    private var orderRetryAttempts = 0
+    /// Guards against stacking more than one pending retry at a time.
+    private var orderRetryScheduled = false
+    private static let maxOrderRetries = 10
 
-    /// True while the popup strip is open. The ┃ divider is only shown while items are revealed or
-    /// the strip is open, and is removed from the menu bar entirely (not just drawn blank) otherwise.
+    /// True while the popup strip is open, so the ┃ is drawn at the hide boundary even though items are hidden.
     var showsDividerWhileHidden = false {
-        didSet { updateDividerVisibility() }
+        didSet { updateDividerMark() }
     }
     /// The lime bird, pinned to the chevron button's trailing edge. It's a persistent subview
     /// rather than part of the chevron's drawn image: SF Symbols tinted with a *dynamic* colour
@@ -111,15 +122,14 @@ final class StatusBarController: NSObject {
         self.sleep = sleep
         Self.seedInitialPositions()
         let bar = NSStatusBar.system
-        keepAwakeItem = bar.statusItem(withLength: NSStatusItem.squareLength)
+        keepAwakeItem = bar.statusItem(withLength: NSStatusItem.variableLength)
         keepAwakeItem.autosaveName = "controlbar.keepawake"
         chevronItem = bar.statusItem(withLength: NSStatusItem.variableLength)
         chevronItem.autosaveName = "controlbar.chevron"
         dividerItem = bar.statusItem(withLength: Self.dividerLength)
         dividerItem.autosaveName = "controlbar.divider"
-        expanderItem = bar.statusItem(withLength: Self.dividerLength)
-        expanderItem.autosaveName = "controlbar.expander"
         super.init()
+        dividerMark.onClick = { [weak self] in self?.setArranging(true) }
 
         for (item, action) in [(keepAwakeItem, #selector(keepAwakeClicked)), (chevronItem, #selector(chevronClicked)),
                                (dividerItem, #selector(dividerClicked))] {
@@ -127,11 +137,9 @@ final class StatusBarController: NSObject {
             item.button?.action = action
             item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
-        // The divider is a small always-visible ┃ (a normal draggable icon); the expander beside it stretches.
+        // The image must stay set even while the item is stretched: an item without one stops
+        // pushing anything off-screen on macOS 26. Centred in the stretched button it is off-screen.
         dividerItem.button?.image = Self.dividerImage
-        expanderItem.button?.image = Self.dividerImage
-        expanderItem.button?.toolTip = "ControlBar — icons to the left of this are hidden"
-
         dividerItem.button?.toolTip = "ControlBar divider — icons to the left of this are hidden"
         dividerItem.button?.setAccessibilityLabel("ControlBar Divider")
         chevronItem.button?.setAccessibilityLabel("ControlBar")
@@ -177,7 +185,10 @@ final class StatusBarController: NSObject {
             defaults.set(chevron + 1, forKey: dividerKey)
         }
         defaults.removeObject(forKey: "NSStatusItem VisibleCC controlbar.divider")
-        let initial: [(String, Double)] = [("controlbar.keepawake", 0), ("controlbar.chevron", 1), ("controlbar.divider", 2), ("controlbar.expander", 3)]
+        // Earlier builds had a separate invisible "expander" item; forget its saved state.
+        defaults.removeObject(forKey: prefix + "controlbar.expander")
+        defaults.removeObject(forKey: "NSStatusItem VisibleCC controlbar.expander")
+        let initial: [(String, Double)] = [("controlbar.keepawake", 0), ("controlbar.chevron", 1), ("controlbar.divider", 2)]
         guard initial.allSatisfy({ defaults.object(forKey: prefix + $0.0) == nil }) else { return }
         for (name, position) in initial {
             defaults.set(position, forKey: prefix + name)
@@ -191,7 +202,7 @@ final class StatusBarController: NSObject {
 
     /// Divider frame in global top-left coordinates (the space Accessibility and CGWindowList use).
     var dividerFrameCG: CGRect? {
-        guard let frame = expanderItem.button?.window?.frame else { return nil }
+        guard let frame = dividerItem.button?.window?.frame else { return nil }
         return Self.toCG(frame)
     }
 
@@ -208,7 +219,7 @@ final class StatusBarController: NSObject {
     /// Hiding is only safe when the divider sits left of the chevron; otherwise expanding it would
     /// push the chevron itself off-screen and leave no way to bring the icons back.
     private var isOrderValid: Bool {
-        guard let divider = expanderItem.button?.window?.frame, let chevron = chevronItem.button?.window?.frame,
+        guard let divider = dividerItem.button?.window?.frame, let chevron = chevronItem.button?.window?.frame,
               divider.width > 0, chevron.width > 0
         else { return true }
         return divider.maxX <= chevron.minX + 1
@@ -244,27 +255,58 @@ final class StatusBarController: NSObject {
         if shouldHide != isHidingItems {
             if shouldHide {
                 if isOrderValid {
-                    expanderItem.length = Self.hiddenLength
+                    dividerItem.length = Self.hiddenLength
                     isHidingItems = true
+                    orderRetryAttempts = 0
                 } else {
-                    onInvalidOrder?()
+                    retryHideAfterOrderSettles()
                 }
             } else {
-                expanderItem.length = Self.dividerLength
+                dividerItem.length = Self.dividerLength
                 isHidingItems = false
+                orderRetryAttempts = 0
             }
+        } else {
+            orderRetryAttempts = 0
         }
         updateChevron()
-        updateDividerVisibility()
+        updateDividerMark()
     }
 
-    /// The item is never removed from the menu bar: toggling `isVisible` makes macOS 26 re-insert it at the
-    /// far left, inside the region the expander pushes off-screen, so the ┃ never came back. Collapsing it to
-    /// zero length keeps its slot next to the chevron.
-    private func updateDividerVisibility() {
-        let show = !isHidingItems || showsDividerWhileHidden
-        dividerItem.length = show ? Self.dividerLength : 0
-        dividerItem.button?.image = show ? Self.dividerImage : nil
+    /// `isOrderValid` reads the live `NSStatusItem` window frames, which AppKit is still settling
+    /// asynchronously for a beat right after the four items are created at launch — so the single
+    /// hide attempt fired 0.6s after launch (see `AppDelegate`) can occasionally race that settle
+    /// and see a transient bad order. Before this retried, that one failed attempt was permanent:
+    /// `applyState()` only runs again from an explicit trigger (arranging, a temporary reveal
+    /// ending, or opening the strip), so a lost race — or an order that goes bad and then rights
+    /// itself, e.g. mid-drag — left icons stuck visible in the real menu bar until the user
+    /// happened to open the strip. Retry a few times over ~2s before giving up and surfacing the
+    /// "drag the divider" hint, so a transient race self-heals instead of stranding the reveal.
+    private func retryHideAfterOrderSettles() {
+        guard orderRetryAttempts < Self.maxOrderRetries else {
+            onInvalidOrder?()
+            return
+        }
+        orderRetryAttempts += 1
+        guard !orderRetryScheduled else { return }
+        orderRetryScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            self?.orderRetryScheduled = false
+            self?.applyState()
+        }
+    }
+
+    /// While items are hidden the divider item is stretched and its own glyph is off-screen, so the
+    /// ┃ is drawn by a click-through overlay at the boundary (the stretched item's right edge) —
+    /// but only while the strip is open. Otherwise the real item's glyph is on-screen and needs no help.
+    private func updateDividerMark() {
+        guard isHidingItems, showsDividerWhileHidden,
+              let window = dividerItem.button?.window, window.frame.width > 0
+        else {
+            dividerMark.orderOut(nil)
+            return
+        }
+        dividerMark.show(atBoundary: window.frame, appearance: window.contentView?.effectiveAppearance)
     }
 
     // MARK: - Clicks
@@ -323,11 +365,52 @@ final class StatusBarController: NSObject {
         DispatchQueue.main.async { [weak self] in
             guard let self, let button = self.keepAwakeItem.button else { return }
             let active = self.sleep.isActive
-            let image = Self.coffeeBeanImage(tint: active && self.prefs.brandColors ? NSColor(Brand.teal) : nil, dim: !active && !self.prefs.brandColors)
+            let tint = active && self.prefs.brandColors ? NSColor(Brand.teal) : nil
+            let dim = !active && !self.prefs.brandColors
+            let showSeconds = self.prefs.countdownShowSeconds
+            let countdown = (active ? self.sleep.endDate : nil).map { Self.countdownTitle(until: $0, showSeconds: showSeconds) }
+            let image = Self.keepAwakeImage(tint: tint, dim: dim, countdown: countdown)
             image.accessibilityDescription = active ? "Keep awake on" : "Keep awake off"
             button.image = image
             button.toolTip = "Keep Awake: \(self.sleep.statusDescription)\nClick to toggle, right-click for options"
+
+            if active, self.sleep.endDate != nil {
+                self.startCountdownTimer()
+            } else {
+                self.stopCountdownTimer()
+            }
         }
+    }
+
+    /// Remaining time. With `showSeconds`: an hour or under is "M:SS", above that "HH:MM:SS".
+    /// Without it: rounded up to the next minute, "M" under an hour, "H:MM" beyond that — so the
+    /// label only changes once a minute instead of every second.
+    private static func countdownTitle(until endDate: Date, showSeconds: Bool) -> String {
+        let secondsLeft = max(0, Int(endDate.timeIntervalSinceNow.rounded(.up)))
+        guard showSeconds else {
+            let minutesLeft = Int((Double(secondsLeft) / 60).rounded(.up))
+            let hours = minutesLeft / 60, minutes = minutesLeft % 60
+            return hours > 0 ? "\(hours):\(String(format: "%02d", minutes))" : "\(minutes)"
+        }
+        guard secondsLeft > 3600 else { return "\(secondsLeft / 60):\(String(format: "%02d", secondsLeft % 60))" }
+        let hours = secondsLeft / 3600
+        let minutes = (secondsLeft % 3600) / 60
+        let seconds = secondsLeft % 60
+        return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
+    }
+
+    private func startCountdownTimer() {
+        guard countdownTimer == nil else { return }
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateKeepAwakeIcon() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        countdownTimer = timer
+    }
+
+    private func stopCountdownTimer() {
+        countdownTimer?.invalidate()
+        countdownTimer = nil
     }
 
     private func updateChevron() {
@@ -383,36 +466,64 @@ final class StatusBarController: NSObject {
     /// A crisp, vector-drawn coffee bean (no bitmap symbol exists for one), so it stays sharp at
     /// any resolution. `tint` nil draws it as a template image that follows the menu bar's
     /// light/dark appearance; a colour draws it "lit up" for the active state.
-    private static func coffeeBeanImage(tint: NSColor?, dim: Bool = false) -> NSImage {
-        let size = NSSize(width: 13, height: 16)
-        let image = NSImage(size: size, flipped: false) { rect in
-            guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
-            let beanRect = rect.insetBy(dx: 1.5, dy: 1)
-            ctx.saveGState()
-            ctx.addPath(CGPath(ellipseIn: beanRect, transform: nil))
-            ctx.clip()
-            ctx.addPath(CGPath(ellipseIn: beanRect, transform: nil))
-            ctx.setFillColor((tint ?? NSColor.black.withAlphaComponent(dim ? 0.5 : 1)).cgColor)
-            ctx.fillPath()
+    private static let beanSize = NSSize(width: 13, height: 16)
 
-            // The bean's centre crack, cut out as a soft S-curve, clipped to the bean itself
-            // so it can't bleed outside the ellipse the way an un-clipped stroke did before.
-            let crack = CGMutablePath()
-            crack.move(to: CGPoint(x: beanRect.midX, y: beanRect.minY + 1))
-            crack.addCurve(to: CGPoint(x: beanRect.midX, y: beanRect.maxY - 1),
-                           control1: CGPoint(x: beanRect.minX + beanRect.width * 0.18, y: beanRect.minY + beanRect.height * 0.38),
-                           control2: CGPoint(x: beanRect.maxX - beanRect.width * 0.18, y: beanRect.minY + beanRect.height * 0.62))
-            ctx.setBlendMode(.clear)
-            ctx.addPath(crack)
-            ctx.setStrokeColor(NSColor.black.cgColor)
-            ctx.setLineWidth(1.0)
-            ctx.setLineCap(.round)
-            ctx.strokePath()
-            ctx.restoreGState()
+    private static func coffeeBeanImage(tint: NSColor?, dim: Bool = false) -> NSImage {
+        let image = NSImage(size: beanSize, flipped: false) { rect in
+            drawBean(in: rect, tint: tint, dim: dim)
             return true
         }
         image.isTemplate = tint == nil
         return image
+    }
+
+    /// The bean, with the keep-awake countdown centred right below it — one composite bitmap so
+    /// the two can never overlap or drift out of sync with each other regardless of how the
+    /// status bar scales/positions the button's image.
+    private static func keepAwakeImage(tint: NSColor?, dim: Bool, countdown: String?) -> NSImage {
+        guard let countdown else { return coffeeBeanImage(tint: tint, dim: dim) }
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 8.5, weight: .semibold)
+        let color = tint ?? NSColor.black.withAlphaComponent(dim ? 0.5 : 1)
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+        let textSize = (countdown as NSString).size(withAttributes: attrs)
+        let gap: CGFloat = 1
+        let size = NSSize(width: max(beanSize.width, textSize.width), height: beanSize.height + gap + textSize.height)
+        let image = NSImage(size: size, flipped: false) { rect in
+            let beanRect = NSRect(x: (rect.width - beanSize.width) / 2, y: rect.height - beanSize.height,
+                                  width: beanSize.width, height: beanSize.height)
+            drawBean(in: beanRect, tint: tint, dim: dim)
+            let textRect = NSRect(x: (rect.width - textSize.width) / 2, y: 0, width: textSize.width, height: textSize.height)
+            (countdown as NSString).draw(in: textRect, withAttributes: attrs)
+            return true
+        }
+        image.isTemplate = tint == nil
+        return image
+    }
+
+    private static func drawBean(in rect: NSRect, tint: NSColor?, dim: Bool) {
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let beanRect = rect.insetBy(dx: 1.5, dy: 1)
+        ctx.saveGState()
+        ctx.addPath(CGPath(ellipseIn: beanRect, transform: nil))
+        ctx.clip()
+        ctx.addPath(CGPath(ellipseIn: beanRect, transform: nil))
+        ctx.setFillColor((tint ?? NSColor.black.withAlphaComponent(dim ? 0.5 : 1)).cgColor)
+        ctx.fillPath()
+
+        // The bean's centre crack, cut out as a soft S-curve, clipped to the bean itself
+        // so it can't bleed outside the ellipse the way an un-clipped stroke did before.
+        let crack = CGMutablePath()
+        crack.move(to: CGPoint(x: beanRect.midX, y: beanRect.minY + 1))
+        crack.addCurve(to: CGPoint(x: beanRect.midX, y: beanRect.maxY - 1),
+                       control1: CGPoint(x: beanRect.minX + beanRect.width * 0.18, y: beanRect.minY + beanRect.height * 0.38),
+                       control2: CGPoint(x: beanRect.maxX - beanRect.width * 0.18, y: beanRect.minY + beanRect.height * 0.62))
+        ctx.setBlendMode(.clear)
+        ctx.addPath(crack)
+        ctx.setStrokeColor(NSColor.black.cgColor)
+        ctx.setLineWidth(1.0)
+        ctx.setLineCap(.round)
+        ctx.strokePath()
+        ctx.restoreGState()
     }
 
     // MARK: - Menu
@@ -481,7 +592,7 @@ final class StatusBarController: NSObject {
         return menu
     }
 
-    private static let dividerImage: NSImage = {
+    static let dividerImage: NSImage = {
         let image = NSImage(size: NSSize(width: 12, height: 16), flipped: false) { rect in
             NSColor.black.setFill()
             NSBezierPath(roundedRect: NSRect(x: rect.midX - 1, y: 1, width: 2, height: rect.height - 2),

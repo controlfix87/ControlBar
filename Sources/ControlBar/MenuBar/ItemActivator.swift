@@ -15,23 +15,144 @@ final class ItemActivator {
         self.statusBar = statusBar
     }
 
-    func activate(_ item: MenuBarItem, secondary: Bool) {
-        guard !isBusy else { return }
+    /// `completion` fires exactly once, however activation ends (success, timeout, or skipped
+    /// because one was already in progress) — callers rely on it to know when it's safe to hide
+    /// whatever UI they used to trigger this (see `StripController`, which keeps its strip on
+    /// screen until this fires instead of hiding it the instant the item is clicked).
+    func activate(_ item: MenuBarItem, secondary: Bool, completion: (() -> Void)? = nil) {
+        guard !isBusy else {
+            completion?()
+            return
+        }
         isBusy = true
+        NSLog("ControlBar DIAG: activate start item=\(item.displayName) secondary=\(secondary)")
         Task { @MainActor in
-            defer { isBusy = false }
+            defer {
+                isBusy = false
+                NSLog("ControlBar DIAG: activate end item=\(item.displayName)")
+                completion?()
+            }
             let baseline = Self.overlayWindowIDs()
             statusBar.beginTemporaryReveal()
-            defer { statusBar.endTemporaryReveal() }
+            NSLog("ControlBar DIAG: beginTemporaryReveal baselineCount=\(baseline.count)")
+            defer { statusBar.endTemporaryReveal(); NSLog("ControlBar DIAG: endTemporaryReveal") }
 
             guard let frame = await waitUntilOnScreen(item) else {
                 NSLog("ControlBar: \(item.displayName) did not become visible")
                 return
             }
+            NSLog("ControlBar DIAG: onScreen frame=\(frame)")
             onItemsRevealed?()
-            press(item, frame: frame, secondary: secondary)
+            await press(item, frame: frame, secondary: secondary, baseline: baseline)
             await waitForMenusToClose(baseline: baseline)
         }
+    }
+
+    // MARK: - Moving an item out of the hidden section
+
+    enum MoveResult {
+        case moved
+        /// The item can't be grabbed while revealed (most likely it sits behind the notch, or off the left edge).
+        case unreachable
+        case failed
+    }
+
+    /// Moves a hidden item to the menu bar at `dropX` (global top-left coordinates) by doing what the user
+    /// would: reveal the hidden section, then ⌘-drag the real item there. macOS has no API for moving other
+    /// apps' status items, so a synthetic ⌘-drag is the only way. `completion` fires exactly once.
+    func moveToMenuBar(_ item: MenuBarItem, dropX: CGFloat, completion: @escaping (MoveResult) -> Void) {
+        guard !isBusy else {
+            completion(.failed)
+            return
+        }
+        isBusy = true
+        Task { @MainActor in
+            // Everything right of the divider keeps its position when the hidden section is revealed
+            // (the bar is right-anchored), so the drop point stays valid across the reveal.
+            let boundary = statusBar.dividerFrameCG?.maxX ?? 0
+            statusBar.beginTemporaryReveal()
+            var result = MoveResult.failed
+            if let frame = await waitUntilReachable(item) {
+                let target = CGPoint(x: max(dropX, boundary + 4), y: frame.midY)
+                await Self.commandDrag(from: CGPoint(x: frame.midX, y: frame.midY), to: target)
+                result = await didLand(item, rightOf: boundary) ? .moved : .failed
+                NSLog("ControlBar: moved \(item.displayName) from \(frame) to x=\(target.x): \(result)")
+            } else {
+                result = .unreachable
+                NSLog("ControlBar: \(item.displayName) can't be reached while revealed")
+            }
+            statusBar.endTemporaryReveal()
+            isBusy = false
+            completion(result)
+        }
+    }
+
+    /// The item is on-screen and actually drawn (icons behind the notch report a frame but aren't).
+    private func waitUntilReachable(_ item: MenuBarItem) async -> CGRect? {
+        let screens = NSScreen.screens.map { StatusBarController.toCG($0.frame) }
+        for _ in 0..<40 {
+            try? await Task.sleep(for: .milliseconds(40))
+            guard let frame = AX.frame(item.element),
+                  screens.contains(where: { $0.contains(CGPoint(x: frame.midX, y: frame.midY)) })
+            else { continue }
+            let drawn = item.windowID.map { id in MenuBarScanner.statusWindows().first { $0.id == id }?.isOnScreen ?? false } ?? true
+            if drawn {
+                try? await Task.sleep(for: .milliseconds(80)) // let the layout animation finish
+                return AX.frame(item.element) ?? frame
+            }
+        }
+        return nil
+    }
+
+    private func didLand(_ item: MenuBarItem, rightOf boundary: CGFloat) async -> Bool {
+        for _ in 0..<15 {
+            try? await Task.sleep(for: .milliseconds(80))
+            if let frame = AX.frame(item.element), frame.minX >= boundary { return true }
+        }
+        return false
+    }
+
+    /// Posts one mouse event. The window server routes status-item clicks and drags by the window under
+    /// the pointer, so the event is tagged with the item's window; an untagged drag does nothing, and an
+    /// untagged click never reaches an item hidden behind the notch.
+    private static func postMouse(_ type: CGEventType, button: CGMouseButton, at point: CGPoint,
+                                  flags: CGEventFlags = [], window: StatusWindow?, source: CGEventSource?) {
+        guard let event = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: point, mouseButton: button) else { return }
+        event.flags = flags
+        event.setIntegerValueField(.mouseEventClickState, value: 1)
+        if let window {
+            event.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(window.id))
+            event.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(window.id))
+            event.setIntegerValueField(.eventTargetUnixProcessID, value: Int64(window.ownerPID))
+        }
+        event.post(tap: .cghidEventTap)
+    }
+
+    /// A left-button drag with ⌘ held, which is how macOS lets you rearrange menu bar icons.
+    private static func commandDrag(from start: CGPoint, to end: CGPoint) async {
+        let windows = MenuBarScanner.statusWindows().filter { $0.isOnScreen }
+        func window(at point: CGPoint) -> StatusWindow? { windows.first { $0.frame.contains(point) } }
+        let startWindow = window(at: start)
+        let endWindow = window(at: end)
+        let source = CGEventSource(stateID: .hidSystemState)
+        let original = CGEvent(source: nil)?.location
+        func post(_ type: CGEventType, _ point: CGPoint, _ target: StatusWindow?) {
+            postMouse(type, button: .left, at: point, flags: .maskCommand, window: target, source: source)
+        }
+        post(.mouseMoved, start, startWindow)
+        try? await Task.sleep(for: .milliseconds(80))
+        post(.leftMouseDown, start, startWindow)
+        try? await Task.sleep(for: .milliseconds(150))
+        let steps = 24
+        for i in 1...steps {
+            let t = CGFloat(i) / CGFloat(steps)
+            let point = CGPoint(x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t)
+            post(.leftMouseDragged, point, startWindow)
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        try? await Task.sleep(for: .milliseconds(200))
+        post(.leftMouseUp, end, endWindow ?? startWindow)
+        if let original { CGWarpMouseCursorPosition(original) }
     }
 
     // MARK: - Steps
@@ -51,45 +172,96 @@ final class ItemActivator {
         return nil
     }
 
-    private func press(_ item: MenuBarItem, frame: CGRect, secondary: Bool) {
-        let action = secondary ? kAXShowMenuAction : kAXPressAction
-        if AX.actions(item.element).contains(action), AX.perform(item.element, action) {
-            return
+    /// `AXUIElement` isn't `Sendable`, but the AX calls made with it are thread-safe.
+    private struct ElementBox: @unchecked Sendable { let element: AXUIElement }
+
+    /// Opens the item's menu or popover: an Accessibility action when the item has one, otherwise a
+    /// synthetic click.
+    ///
+    /// The AX action is fired on a background thread and judged by whether a menu window actually shows
+    /// up, never by its return value. Apps run their menu-tracking loop *inside* the action handler, so
+    /// the call blocks until the menu closes (or times out, ~1.5 s) and then reports failure even though
+    /// the menu opened. Trusting that result — or blocking the main thread on it — used to trigger the
+    /// synthetic-click fallback on top of the just-opened menu, which dismissed it.
+    private func press(_ item: MenuBarItem, frame: CGRect, secondary: Bool, baseline: Set<CGWindowID>) async {
+        let actions = AX.actions(item.element)
+        let window = item.windowID.flatMap { id in MenuBarScanner.statusWindows().first { $0.id == id } }
+        // A synthetic click can only reach an icon that is actually drawn; one behind the notch has to
+        // go through Accessibility, even for a right-click (its menu is usually the same one).
+        let isDrawn = window?.isOnScreen ?? true
+
+        var action: String?
+        if secondary {
+            if actions.contains(kAXShowMenuAction) { action = kAXShowMenuAction }
+            else if !isDrawn, actions.contains(kAXPressAction) { action = kAXPressAction }
+        } else if actions.contains(kAXPressAction) {
+            action = kAXPressAction
         }
-        Self.click(at: CGPoint(x: frame.midX, y: frame.midY), secondary: secondary)
+        NSLog("ControlBar DIAG: press secondary=\(secondary) action=\(action ?? "synthetic click") drawn=\(isDrawn)")
+
+        if let action {
+            let box = ElementBox(element: item.element)
+            Task.detached { _ = AX.perform(box.element, action) }
+            // Generous window before assuming nothing opened: a synthetic click on top of a menu that
+            // *did* open (just slowly) lands on it or on the wrong entry. Waiting a little too long is
+            // harmless; a wrong fallback click is not.
+            for i in 0..<30 {
+                try? await Task.sleep(for: .milliseconds(100))
+                if !Self.overlayWindowIDs().subtracting(baseline).isEmpty {
+                    NSLog("ControlBar DIAG: press saw overlay after \((i + 1) * 100)ms via AX")
+                    return
+                }
+            }
+            NSLog("ControlBar DIAG: press: no overlay 3s after AX action, falling back to synthetic click")
+        }
+        guard isDrawn else { return }
+        // Re-fetch the position rather than trusting the frame captured before the wait above; if the bar
+        // reflowed meanwhile, a stale point can land on a neighbour and open the wrong menu.
+        let clickFrame = AX.frame(item.element) ?? frame
+        NSLog("ControlBar DIAG: synthetic click at \(clickFrame) (original frame was \(frame))")
+        await Self.click(at: CGPoint(x: clickFrame.midX, y: clickFrame.midY), secondary: secondary, window: window)
     }
 
     /// Falls back to a synthetic click when the item doesn't support the Accessibility action.
-    private static func click(at point: CGPoint, secondary: Bool) {
+    private static func click(at point: CGPoint, secondary: Bool, window: StatusWindow?) async {
         let source = CGEventSource(stateID: .hidSystemState)
         let original = CGEvent(source: nil)?.location
         let (down, up, button): (CGEventType, CGEventType, CGMouseButton) = secondary
             ? (.rightMouseDown, .rightMouseUp, .right)
             : (.leftMouseDown, .leftMouseUp, .left)
-        CGEvent(mouseEventSource: source, mouseType: down, mouseCursorPosition: point, mouseButton: button)?
-            .post(tap: .cghidEventTap)
-        CGEvent(mouseEventSource: source, mouseType: up, mouseCursorPosition: point, mouseButton: button)?
-            .post(tap: .cghidEventTap)
+        postMouse(.mouseMoved, button: button, at: point, window: window, source: source)
+        try? await Task.sleep(for: .milliseconds(50))
+        postMouse(down, button: button, at: point, window: window, source: source)
+        try? await Task.sleep(for: .milliseconds(60)) // a real click isn't instantaneous
+        postMouse(up, button: button, at: point, window: window, source: source)
         if let original { CGWarpMouseCursorPosition(original) }
     }
 
     /// Keeps the section revealed while a new menu/popover window is on screen.
+    ///
+    /// Every wait here re-checks for an overlay before giving up — a blind "wait a bit then bail"
+    /// grace period would risk collapsing the reveal (and killing the item's own menu-tracking
+    /// loop, which macOS dismisses when its status item vanishes) right as a slow-to-open menu
+    /// finally appears.
     private func waitForMenusToClose(baseline: Set<CGWindowID>) async {
-        // Give the item a moment to open something.
+        // Give the item a moment to open something — some apps are slow to post their menu.
         var sawOverlay = false
-        for _ in 0..<15 {
+        for _ in 0..<25 {
             try? await Task.sleep(for: .milliseconds(100))
             if !Self.overlayWindowIDs().subtracting(baseline).isEmpty { sawOverlay = true; break }
         }
         guard sawOverlay else {
-            try? await Task.sleep(for: .milliseconds(600))
+            NSLog("ControlBar DIAG: waitForMenusToClose never saw an overlay, returning")
             return
         }
-        // Wait (up to 10 minutes) until every new overlay window is gone.
-        for _ in 0..<(10 * 60 * 4) {
+        NSLog("ControlBar DIAG: waitForMenusToClose saw overlay, waiting for it to close")
+        // Wait (up to a minute) until every new overlay window is gone.
+        var closed = false
+        for _ in 0..<(60 * 4) {
             try? await Task.sleep(for: .milliseconds(250))
-            if Self.overlayWindowIDs().subtracting(baseline).isEmpty { break }
+            if Self.overlayWindowIDs().subtracting(baseline).isEmpty { closed = true; break }
         }
+        NSLog("ControlBar DIAG: waitForMenusToClose done, closed=\(closed) (false means we hit the 1-minute cap)")
         try? await Task.sleep(for: .milliseconds(200))
     }
 

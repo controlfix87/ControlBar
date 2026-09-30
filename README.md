@@ -28,9 +28,10 @@ Requires macOS 14 Sonoma or later (tested on macOS 26 Tahoe). Downloads for Appl
 | ◔ dial | Show the hidden-icons strip | The ControlBar menu (⌥-click: arrange icons) |
 | ┃ divider | The ControlBar menu | The ControlBar menu |
 
-The ┃ divider is only in the menu bar while the strip is open or while you are arranging icons.
+The ┃ divider is only in the menu bar while the strip is open or while you are arranging icons. It can be ⌘-dragged only while arranging: click the ┃ while the strip is open (or choose *Arrange Menu Bar Icons…*) to start.
 
 - **Choosing what to hide:** choose *Arrange Menu Bar Icons…*, then hold **⌘** and drag icons to the left of the ┃ divider to hide them, or to its right to keep them visible. Click ✓ when you're done.
+- **Moving a hidden icon back to the menu bar:** hold **⌘** and drag it from the strip onto the menu bar, to the right of the ┃ divider. ControlBar reveals the hidden section, ⌘-drags the real icon to where you let go, and hides the rest again. An icon that sits behind the notch while the section is revealed can't be grabbed this way; ControlBar tells you when that happens.
 - **Opening a hidden icon:** click it in the strip. ControlBar briefly reveals the real icon and presses it, so its menu opens where it normally would. Right-click an icon in the strip to send it a right-click.
 - **Keep awake:** turn it on from the coffee-bean icon or the menu. *Keep Awake For* offers Indefinitely, 15 / 30 minutes, and 1 / 2 / 4 / 8 hours; the default time, *Keep screen on* and *Turn on at launch* are in Settings → Keep Awake.
 - **Settings:** General (launch at login, which icons to show, brand colours), Keep Awake, Hidden Icons (hide delay, icon size, hide on outside click, hover pause), Shortcuts, Permissions and About (with *Copy Diagnostics* for bug reports).
@@ -76,7 +77,8 @@ Troubleshooting: *Settings → About → Copy Diagnostics* produces a report of 
 ## How it works
 
 - **Keep awake:** an IOKit power assertion (`PreventUserIdleSystemSleep` or `PreventUserIdleDisplaySleep`). The system releases it automatically if ControlBar quits.
-- **Hiding:** ControlBar adds a divider status item. To hide, the divider grows very wide, which pushes every icon on its left off the screen. To reveal, it shrinks back.
+- **Hiding:** ControlBar adds a divider status item, the only item that hides anything. To hide, the divider grows very wide, which pushes every icon on its left off the screen. To reveal, it shrinks back. While the strip is open, a small click-through overlay draws the ┃ at the boundary, because the stretched divider's own glyph is off-screen.
+- **Moving icons:** macOS has no API for rearranging other apps' status items, so ControlBar posts a real ⌘-drag (synthetic mouse events) on the revealed icon.
 - **Finding hidden icons:** each app's status items are read through the Accessibility API (`AXExtrasMenuBar`), which gives the owner, label, position and a pressable element. On macOS 26 every status-item window is owned by Control Center, so the window list alone can't tell which app an icon belongs to.
 - **Pictures:** the icon's window is matched by position and captured with ScreenCaptureKit. Single-colour glyphs are drawn as templates so they stay readable on the strip's background.
 - **Clicking:** the hidden section is revealed briefly, the item gets an `AXPress` (with a synthetic click as a fallback), and ControlBar waits until the menu or popover closes before hiding again.

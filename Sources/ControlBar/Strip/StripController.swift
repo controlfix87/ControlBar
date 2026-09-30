@@ -17,9 +17,12 @@ final class StripController {
     private let panel = StripPanel()
 
     private var hideTimer: Timer?
+    private var pendingHideTask: Task<Void, Never>?
     private var monitors: [Any] = []
     private var observers: [NSObjectProtocol] = []
     private var isHovering = false
+    /// A strip icon is being ⌘-dragged out; the strip must not auto-hide from under it.
+    private var isDragging = false
     private var loadGeneration = 0
     private(set) var isVisible = false
     /// Opens ControlBar's own Settings on the Permissions tab.
@@ -140,6 +143,8 @@ final class StripController {
     }
 
     func hide(animated: Bool = true) {
+        pendingHideTask?.cancel()
+        pendingHideTask = nil
         guard isVisible else { return }
         isVisible = false
         let wasInline = isInlineReveal
@@ -225,9 +230,16 @@ final class StripController {
             let views = items.map { item -> NSView in
                 let view = StripItemView(item: item, image: images[item.id], scale: CGFloat(prefs.stripScale))
                 view.onActivate = { [weak self] item, secondary in
-                    self?.hide(animated: false)
-                    self?.activator.activate(item, secondary: secondary)
+                    // Keep the strip visible through the activation instead of yanking it away
+                    // the instant the item is clicked — the real reveal-and-press still has to
+                    // happen behind it (that's the only way to show the item's real menu), but
+                    // the strip itself only disappears once that's actually finished.
+                    self?.activator.activate(item, secondary: secondary) { [weak self] in
+                        self?.hide(animated: false)
+                    }
                 }
+                view.onDragBegan = { [weak self] in self?.dragBegan() }
+                view.onDragEnded = { [weak self] item, point in self?.dragEnded(item, at: point) }
                 return view
             }
             let stack = NSStackView(views: views)
@@ -260,6 +272,47 @@ final class StripController {
         }
     }
 
+    // MARK: - Dragging icons out
+
+    private func dragBegan() {
+        isDragging = true
+        hideTimer?.invalidate()
+        hideTimer = nil
+        pendingHideTask?.cancel()
+        pendingHideTask = nil
+    }
+
+    /// An icon was ⌘-dragged out of the strip. If it was let go over the menu bar (right of the ┃), move
+    /// the real icon there; anywhere else it's a cancelled drag and the strip carries on.
+    private func dragEnded(_ item: MenuBarItem, at screenPoint: NSPoint) {
+        isDragging = false
+        let point = StatusBarController.toCG(NSRect(origin: screenPoint, size: .zero)).origin
+        // Anywhere on the bar counts. The bar is right-anchored, so a drop left of the first visible icon
+        // (the empty area) means "make it the leftmost visible icon"; `moveToMenuBar` clamps the x for that.
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(screenPoint) }),
+              !panel.frame.contains(screenPoint), isOverMenuBar(screenPoint, on: screen)
+        else {
+            restartHideTimer()
+            return
+        }
+        hide(animated: false)
+        activator.moveToMenuBar(item, dropX: point.x) { [weak self] result in
+            switch result {
+            case .moved: break
+            case .unreachable:
+                self?.showHint("\(item.displayName) is behind the notch (or off-screen) while the hidden icons are revealed, so it can't be dragged out from here. Move it from the menu bar itself, or make more room by hiding fewer icons.")
+            case .failed:
+                self?.showHint("Couldn't move \(item.displayName). Make sure ControlBar has Accessibility access, then try again.")
+            }
+        }
+    }
+
+    private func isOverMenuBar(_ point: NSPoint, on screen: NSScreen) -> Bool {
+        let barHeight = screen.frame.maxY - screen.visibleFrame.maxY
+        // A little slack below the bar: the pointer is often let go just under it, next to the strip.
+        return screen.frame.maxY - point.y <= max(barHeight, 24) + 10
+    }
+
     /// Right-aligned under the chevron, just below the menu bar, clamped to the screen.
     private func targetFrame(for size: NSSize) -> NSRect {
         let gap: CGFloat = 5
@@ -281,14 +334,57 @@ final class StripController {
     private func restartHideTimer(for content: Content? = nil) {
         hideTimer?.invalidate()
         hideTimer = nil
-        if isHovering && prefs.pauseWhileHovering { return }
+        if isDragging || (isHovering && prefs.pauseWhileHovering) { return }
         var delay = prefs.autoHideDelay
         if case .message = content { delay = max(delay, 8) }
         let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated { self?.hide() }
+            MainActor.assumeIsolated { self?.hideAfterMenusClose() }
         }
         RunLoop.main.add(timer, forMode: .common)
         hideTimer = timer
+    }
+
+    /// Hides, but if the triggering click just opened a menu/popover (e.g. a right-click on an
+    /// inline-revealed icon, which macOS handles directly and we never see), waits for it to close
+    /// first instead of yanking the icon — and the menu with it — out from under the user.
+    ///
+    /// This first *polls* for an overlay to show up at all (some apps, LuLu among them, are slow
+    /// to post their menu) before it waits for one to close. A single check after one fixed grace
+    /// period isn't enough — it can run before a slow menu has appeared and hide (dismissing) it
+    /// right out from under the user. The poll is capped well under a second so the common case
+    /// (a plain click elsewhere, no menu involved at all) doesn't pick up a noticeable delay.
+    ///
+    /// Both checks only count overlays that are *new* since this was triggered (subtracting
+    /// `baseline`) and the close-wait has a hard ceiling — otherwise a window that was already
+    /// on screen for an unrelated reason (or a menu macOS never reports as closed) reads as "a
+    /// menu is still open" forever, permanently stranding the reveal.
+    private func hideAfterMenusClose() {
+        guard !isDragging else { return }
+        pendingHideTask?.cancel()
+        let baseline = ItemActivator.overlayWindowIDs()
+        NSLog("ControlBar DIAG: hideAfterMenusClose called, baselineCount=\(baseline.count)")
+        pendingHideTask = Task { @MainActor [weak self] in
+            var sawOverlay = false
+            for _ in 0..<5 {
+                guard !Task.isCancelled else { return }
+                if !ItemActivator.overlayWindowIDs().subtracting(baseline).isEmpty { sawOverlay = true; break }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            guard let self, !Task.isCancelled else { return }
+            NSLog("ControlBar DIAG: hideAfterMenusClose sawOverlay=\(sawOverlay)")
+            if sawOverlay {
+                var closed = false
+                for _ in 0..<(60 * 5) {
+                    if ItemActivator.overlayWindowIDs().subtracting(baseline).isEmpty { closed = true; break }
+                    try? await Task.sleep(for: .milliseconds(200))
+                    if Task.isCancelled { return }
+                }
+                NSLog("ControlBar DIAG: hideAfterMenusClose wait done, closed=\(closed)")
+            }
+            guard !Task.isCancelled else { return }
+            NSLog("ControlBar DIAG: hideAfterMenusClose calling hide()")
+            self.hide()
+        }
     }
 
     private func hoverChanged(_ hovering: Bool) {
@@ -308,7 +404,7 @@ final class StripController {
         if let m = NSEvent.addGlobalMonitorForEvents(matching: clickMask, handler: { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.prefs.hideOnClickOutside else { return }
-                self.hide()
+                self.hideAfterMenusClose()
             }
         }) { monitors.append(m) }
         // Clicks in ControlBar's own windows other than the strip (the chevron toggles on its own).
@@ -317,7 +413,7 @@ final class StripController {
                 guard let self, self.prefs.hideOnClickOutside,
                       event.window !== self.panel, event.window !== self.statusBar.chevronWindow
                 else { return }
-                self.hide()
+                self.hideAfterMenusClose()
             }
             return event
         }) { monitors.append(m) }
