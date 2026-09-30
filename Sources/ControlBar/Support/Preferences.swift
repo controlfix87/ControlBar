@@ -63,6 +63,7 @@ final class Preferences: ObservableObject {
         static let showKeepAwakeIcon = "showKeepAwakeIcon"
         static let showLogoIcon = "showLogoIcon"
         static let stripScale = "stripScale"
+        static let stripColoredIcons = "stripColoredIcons"
         static let brandColors = "brandColors"
         static let preferInlineReveal = "preferInlineReveal"
         static let countdownShowSeconds = "countdownShowSeconds"
@@ -107,6 +108,8 @@ final class Preferences: ObservableObject {
     @Published var showKeepAwakeIcon: Bool { didSet { defaults.set(showKeepAwakeIcon, forKey: Key.showKeepAwakeIcon) } }
     /// Size of the popup strip's icons, as a multiple of their natural size.
     @Published var stripScale: Double { didSet { defaults.set(stripScale, forKey: Key.stripScale) } }
+    /// Strip icons keep the colours they have in the menu bar; off = single-colour glyphs follow the strip's label colour.
+    @Published var stripColoredIcons: Bool { didSet { defaults.set(stripColoredIcons, forKey: Key.stripColoredIcons) } }
     /// Menu bar icons use ControlBar's brand colours; off = plain macOS monochrome.
     @Published var brandColors: Bool { didSet { defaults.set(brandColors, forKey: Key.brandColors) } }
     /// Shows ControlBar's own logo glyph to the right of the chevron.
@@ -136,6 +139,7 @@ final class Preferences: ObservableObject {
             Key.showKeepAwakeIcon: true,
             Key.showLogoIcon: true,
             Key.stripScale: 1.0,
+            Key.stripColoredIcons: true,
             Key.brandColors: true,
             Key.preferInlineReveal: false,
             Key.countdownShowSeconds: true,
@@ -152,6 +156,7 @@ final class Preferences: ObservableObject {
         showKeepAwakeIcon = defaults.bool(forKey: Key.showKeepAwakeIcon)
         showLogoIcon = defaults.bool(forKey: Key.showLogoIcon)
         stripScale = defaults.double(forKey: Key.stripScale)
+        stripColoredIcons = defaults.bool(forKey: Key.stripColoredIcons)
         brandColors = defaults.bool(forKey: Key.brandColors)
         preferInlineReveal = defaults.bool(forKey: Key.preferInlineReveal)
         countdownShowSeconds = defaults.bool(forKey: Key.countdownShowSeconds)

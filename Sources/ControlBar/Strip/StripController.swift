@@ -228,7 +228,8 @@ final class StripController {
         switch content {
         case let .items(items, images):
             let views = items.map { item -> NSView in
-                let view = StripItemView(item: item, image: images[item.id], scale: CGFloat(prefs.stripScale))
+                let view = StripItemView(item: item, image: images[item.id], scale: CGFloat(prefs.stripScale),
+                                         original: prefs.stripColoredIcons)
                 view.onActivate = { [weak self] item, secondary in
                     // Keep the strip visible through the activation instead of yanking it away
                     // the instant the item is clicked — the real reveal-and-press still has to

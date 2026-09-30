@@ -231,6 +231,10 @@ private struct HiddenIconsTab: View {
                         Slider(value: $prefs.stripScale, in: 0.75...2.0, step: 0.05)
                         Text("\(Int((prefs.stripScale * 100).rounded()))%").monospacedDigit().frame(width: 44, alignment: .trailing)
                     } } label: { row("Icon size", "arrow.up.left.and.arrow.down.right") }
+                    LabeledContent { Picker("", selection: $prefs.stripColoredIcons) {
+                        Text("Colored").tag(true)
+                        Text("White").tag(false)
+                    }.pickerStyle(.segmented).labelsHidden().frame(width: 160) } label: { row("Icon colors", "paintpalette") }
                     Toggle(isOn: $prefs.hideOnClickOutside) { row("Hide on outside click", "cursorarrow.click") }
                     Toggle(isOn: $prefs.pauseWhileHovering) { row("Keep menu visible while hovering", "hand.point.up.left") }
                     Toggle(isOn: $prefs.preferInlineReveal) { row("Use menu bar if it fits", "menubar.rectangle") }
