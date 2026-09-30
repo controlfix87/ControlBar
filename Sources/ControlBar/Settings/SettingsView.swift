@@ -33,13 +33,18 @@ struct SettingsView: View {
                     let selected = model.tab == tab
                     Button { model.tab = tab } label: {
                         VStack(spacing: 3) {
-                            Image(systemName: icon).font(.system(size: 17, weight: .medium))
+                            Image(systemName: icon)
+                                .font(.system(size: 17, weight: .medium))
+                                .padding(5)
+                                .background(
+                                    Circle().stroke(Brand.ink, lineWidth: selected ? 1.5 : 0)
+                                )
                             Text(title).font(.system(size: 10.5, weight: .semibold))
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 7)
-                        .foregroundStyle(selected ? Brand.mint : Color.secondary)
-                        .background(RoundedRectangle(cornerRadius: 9).fill(selected ? Brand.teal.opacity(0.22) : .clear))
+                        .foregroundStyle(selected ? Brand.ink : Color.secondary)
+                        .background(RoundedRectangle(cornerRadius: 9).fill(selected ? Brand.lime : .clear))
                         .contentShape(RoundedRectangle(cornerRadius: 9))
                     }
                     .buttonStyle(.plain)
@@ -63,7 +68,7 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(width: 520, height: 500)
-        .tint(Brand.teal)
+        .tint(Brand.lime)
         .toggleStyle(PillToggleStyle())
     }
 }
@@ -77,10 +82,10 @@ private struct PillToggleStyle: ToggleStyle {
             configuration.label
             Spacer(minLength: 8)
             ZStack {
-                Capsule().fill(configuration.isOn ? Brand.teal : Color.secondary.opacity(0.35))
+                Capsule().fill(configuration.isOn ? Brand.lime : Color.secondary.opacity(0.35))
                 Text(configuration.isOn ? "ON" : "OFF")
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(configuration.isOn ? Brand.ink : .white)
                     .frame(maxWidth: .infinity, alignment: configuration.isOn ? .leading : .trailing)
                     .padding(.horizontal, 8)
                 Circle().fill(.white).shadow(radius: 0.5).padding(2)
@@ -98,7 +103,7 @@ private struct PillToggleStyle: ToggleStyle {
 private struct BrandLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: 10) {
-            configuration.icon.foregroundStyle(Brand.teal).frame(width: 20)
+            configuration.icon.foregroundStyle(Brand.lime).frame(width: 20)
             configuration.title
         }
     }
@@ -200,6 +205,7 @@ private struct KeepAwakeTab: View {
                     Toggle(isOn: $prefs.keepDisplayAwake) { row("Keep screen on", "display") }
                         .onChange(of: prefs.keepDisplayAwake) { _, value in sleep.setKeepDisplayAwake(value) }
                     Toggle(isOn: $prefs.activateOnLaunch) { row("Turn on at launch", "bolt") }
+                    Toggle(isOn: $prefs.countdownShowSeconds) { row("Show seconds in countdown", "clock") }
                 }
             }
             .formStyle(.grouped)
@@ -312,7 +318,7 @@ private struct PermissionRow: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
-            Image(systemName: icon).foregroundStyle(Brand.teal).frame(width: 20)
+            Image(systemName: icon).foregroundStyle(Brand.lime).frame(width: 20)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 5) {
                     Text(title).font(.headline)

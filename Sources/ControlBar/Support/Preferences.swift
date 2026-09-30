@@ -65,6 +65,7 @@ final class Preferences: ObservableObject {
         static let stripScale = "stripScale"
         static let brandColors = "brandColors"
         static let preferInlineReveal = "preferInlineReveal"
+        static let countdownShowSeconds = "countdownShowSeconds"
         static let didShowWelcome = "didShowWelcome"
     }
 
@@ -112,6 +113,9 @@ final class Preferences: ObservableObject {
     @Published var showLogoIcon: Bool { didSet { defaults.set(showLogoIcon, forKey: Key.showLogoIcon) } }
     /// When there's enough free menu bar space, reveal hidden icons in place instead of the strip.
     @Published var preferInlineReveal: Bool { didSet { defaults.set(preferInlineReveal, forKey: Key.preferInlineReveal) } }
+    /// The menu bar countdown counts down to the second (e.g. "45", "01:02:03") instead of only
+    /// to the minute (e.g. "1", "1:02").
+    @Published var countdownShowSeconds: Bool { didSet { defaults.set(countdownShowSeconds, forKey: Key.countdownShowSeconds) } }
 
     var didShowWelcome: Bool {
         get { defaults.bool(forKey: Key.didShowWelcome) }
@@ -133,7 +137,8 @@ final class Preferences: ObservableObject {
             Key.showLogoIcon: true,
             Key.stripScale: 1.0,
             Key.brandColors: true,
-            Key.preferInlineReveal: true,
+            Key.preferInlineReveal: false,
+            Key.countdownShowSeconds: true,
         ])
         autoHideDelay = defaults.double(forKey: Key.autoHideDelay)
         hideOnClickOutside = defaults.bool(forKey: Key.hideOnClickOutside)
@@ -149,6 +154,7 @@ final class Preferences: ObservableObject {
         stripScale = defaults.double(forKey: Key.stripScale)
         brandColors = defaults.bool(forKey: Key.brandColors)
         preferInlineReveal = defaults.bool(forKey: Key.preferInlineReveal)
+        countdownShowSeconds = defaults.bool(forKey: Key.countdownShowSeconds)
         for action in MenuShortcut.allCases {
             if let d = defaults.dictionary(forKey: "shortcut." + action.rawValue), let code = d["code"] as? Int, let mods = d["mods"] as? Int {
                 shortcutOverrides[action.rawValue] = KeyCombo(keyCode: UInt32(code), carbonModifiers: UInt32(mods))
