@@ -139,7 +139,7 @@ final class StripItemView: NSView, NSDraggingSource {
     /// flat multiplier left icons visibly different sizes at the same "Icon size" setting.
     private static let referenceHeight: CGFloat = 16
 
-    init(item: MenuBarItem, image: NSImage?, scale rawScale: CGFloat = 1) {
+    init(item: MenuBarItem, image: NSImage?, scale rawScale: CGFloat = 1, original: Bool = true) {
         self.item = item
         let scale = rawScale * Self.baseScale
         super.init(frame: .zero)
@@ -152,7 +152,13 @@ final class StripItemView: NSView, NSDraggingSource {
         let imageSize: NSSize
         if let image, image.size.width > 0, image.size.height > 0 {
             // A captured picture of the real item, already padded like the menu bar.
-            imageView.image = image
+            // "Original" shows the capture as drawn in the menu bar instead of tinting monochrome glyphs.
+            if original, image.isTemplate, let copy = image.copy() as? NSImage {
+                copy.isTemplate = false
+                imageView.image = copy
+            } else {
+                imageView.image = image
+            }
             imageView.imageScaling = .scaleProportionallyUpOrDown
             let displayHeight = Self.referenceHeight * scale
             imageSize = NSSize(width: displayHeight * (image.size.width / image.size.height), height: displayHeight)

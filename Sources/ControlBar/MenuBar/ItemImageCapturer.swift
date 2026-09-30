@@ -125,13 +125,18 @@ final class ItemImageCapturer {
 
     static func isMonochrome(_ image: CGImage) -> Bool {
         pixels(of: image) { p, count in
+            // Only solid pixels count: anti-aliased edges are premultiplied against the (possibly blue-tinted)
+            // backdrop and read as coloured, which used to make plain white/grey glyphs fail this check and
+            // get drawn raw — a bluish cast instead of the strip's label colour. Channels are un-premultiplied
+            // so a dim solid pixel isn't mistaken for a desaturated one.
             var opaque = 0, colored = 0
-            for i in stride(from: 0, to: count, by: 4) where p[i + 3] > 40 {
+            for i in stride(from: 0, to: count, by: 4) where p[i + 3] > 200 {
                 opaque += 1
-                let r = Int(p[i]), g = Int(p[i + 1]), b = Int(p[i + 2])
-                if max(r, g, b) - min(r, g, b) > 40 { colored += 1 }
+                let a = Int(p[i + 3])
+                let r = Int(p[i]) * 255 / a, g = Int(p[i + 1]) * 255 / a, b = Int(p[i + 2]) * 255 / a
+                if max(r, g, b) - min(r, g, b) > 60 { colored += 1 }
             }
-            return opaque > 0 && Double(colored) / Double(opaque) < 0.05
+            return opaque > 0 && Double(colored) / Double(opaque) < 0.12
         }
     }
 }
