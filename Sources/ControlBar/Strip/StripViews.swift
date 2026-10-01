@@ -192,7 +192,17 @@ final class StripItemView: NSView, NSDraggingSource {
         filter.setValue(aspect, forKey: kCIInputAspectRatioKey)
         guard let scaledOutput = filter.outputImage else { return image }
         // Enlarging a small bitmap leaves it soft; a light luminance sharpen restores the edges.
-        let output = scaledOutput.applyingFilter("CISharpenLuminance", parameters: [kCIInputSharpnessKey: 0.7])
+        var output = scaledOutput.applyingFilter("CISharpenLuminance", parameters: [kCIInputSharpnessKey: 0.7])
+        if image.isTemplate {
+            // Template glyphs are drawn from their alpha alone, and thin strokes (Time Machine's clock arrow)
+            // turn into a grey haze when enlarged. Steepening the alpha ramp around 50% pulls the soft
+            // edges back into crisp ones while keeping the anti-aliasing.
+            let k: CGFloat = 2.2, b = 0.5 - 0.5 * k
+            output = output.applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: 1, y: 0, z: 0, w: 0), "inputGVector": CIVector(x: 0, y: 1, z: 0, w: 0),
+                "inputBVector": CIVector(x: 0, y: 0, z: 1, w: 0), "inputAVector": CIVector(x: 0, y: 0, z: 0, w: k),
+                "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: b)])
+        }
         guard let result = ciContext.createCGImage(output, from: CGRect(x: 0, y: 0, width: targetW, height: targetH))
         else { return image }
         let scaled = NSImage(cgImage: result, size: size)
@@ -214,8 +224,11 @@ final class StripItemView: NSView, NSDraggingSource {
         if let image, image.size.width > 0, image.size.height > 0 {
             // A captured picture of the real item, already padded like the menu bar.
             imageView.imageScaling = .scaleProportionallyUpOrDown
+            let density = NSScreen.main?.backingScaleFactor ?? 2
+            let snap = { (v: CGFloat) in max(1, (v * density).rounded()) / density }
             let displayHeight = Self.referenceHeight * scale
-            imageSize = NSSize(width: displayHeight * (image.size.width / image.size.height), height: displayHeight)
+            // Whole device pixels, so the bitmap lands exactly on the pixel grid instead of being stretched.
+            imageSize = NSSize(width: snap(displayHeight * (image.size.width / image.size.height)), height: snap(displayHeight))
             // Resample once, with Lanczos, to the exact pixels the icon occupies on screen, so AppKit never
             // has to stretch or shrink the (oversampled) capture itself, which is what made it look soft.
             let sharp = Self.resampled(image, to: imageSize)
@@ -240,10 +253,10 @@ final class StripItemView: NSView, NSDraggingSource {
         }
         let size = NSSize(width: max(imageSize.width, 24), height: max(imageSize.height, 24))
         imageView.contentTintColor = glyphTint ?? .labelColor
-        // Smooth, high-quality resampling when the capture is scaled to the strip's icon size.
+        // The image is already resampled to exact pixels, so the layer must not filter it a second time.
         imageView.wantsLayer = true
-        imageView.layer?.magnificationFilter = .trilinear
-        imageView.layer?.minificationFilter = .trilinear
+        imageView.layer?.magnificationFilter = .nearest
+        imageView.layer?.minificationFilter = .nearest
         imageView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(imageView)
 
