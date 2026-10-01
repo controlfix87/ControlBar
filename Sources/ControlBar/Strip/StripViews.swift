@@ -126,6 +126,7 @@ final class StripItemView: NSView, NSDraggingSource {
     private var isDragging = false
 
     private let imageView = NSImageView()
+    private var glyphTint: NSColor?
     private var trackingArea: NSTrackingArea?
     private var isHovered = false { didSet { needsDisplay = true } }
     private var isPressed = false { didSet { needsDisplay = true } }
@@ -141,6 +142,41 @@ final class StripItemView: NSView, NSDraggingSource {
     private static let referenceHeight: CGFloat = 16
 
     private static let ciContext = CIContext()
+    private static var accentCache: [String: NSColor?] = [:]
+
+    /// The most prominent saturated colour in the app's icon, or nil when the icon is essentially grey.
+    private static func accentColor(of item: MenuBarItem) -> NSColor? {
+        if let cached = accentCache[item.id] { return cached }
+        let color = item.appIcon.flatMap(dominantColor)
+        accentCache[item.id] = color
+        return color
+    }
+
+    private static func dominantColor(of icon: NSImage) -> NSColor? {
+        let n = 24
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: n, pixelsHigh: n, bitsPerSample: 8, samplesPerPixel: 4,
+                                         hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
+              let ctx = NSGraphicsContext(bitmapImageRep: rep) else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = ctx
+        icon.draw(in: NSRect(x: 0, y: 0, width: n, height: n))
+        NSGraphicsContext.restoreGraphicsState()
+        // Weight pixels by saturation into hue buckets and take the heaviest bucket's average.
+        var weight = [Double](repeating: 0, count: 12), sum = [(Double, Double, Double)](repeating: (0, 0, 0), count: 12)
+        for y in 0..<n { for x in 0..<n {
+            guard let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB), c.alphaComponent > 0.6 else { continue }
+            let sat = c.saturationComponent, bri = c.brightnessComponent
+            guard sat > 0.4, bri > 0.3 else { continue }
+            let bucket = min(11, Int(c.hueComponent * 12)), w = Double(sat * bri)
+            weight[bucket] += w
+            sum[bucket] = (sum[bucket].0 + Double(c.redComponent) * w, sum[bucket].1 + Double(c.greenComponent) * w, sum[bucket].2 + Double(c.blueComponent) * w)
+        } }
+        guard let best = weight.indices.max(by: { weight[$0] < weight[$1] }), weight[best] > Double(n * n) * 0.02 else { return nil }
+        let w = weight[best]
+        let base = NSColor(deviceRed: sum[best].0 / w, green: sum[best].1 / w, blue: sum[best].2 / w, alpha: 1)
+        // Lift it so it reads on the strip's dark and light backgrounds alike.
+        return NSColor(deviceHue: base.hueComponent, saturation: min(1, base.saturationComponent), brightness: max(0.85, base.brightnessComponent), alpha: 1)
+    }
 
     /// `image` scaled to `size` points at the screen's pixel density using a Lanczos filter.
     private static func resampled(_ image: NSImage, to size: NSSize) -> NSImage {
@@ -154,8 +190,10 @@ final class StripItemView: NSView, NSDraggingSource {
         filter.setValue(source, forKey: kCIInputImageKey)
         filter.setValue(scaleY, forKey: kCIInputScaleKey)
         filter.setValue(aspect, forKey: kCIInputAspectRatioKey)
-        guard let output = filter.outputImage,
-              let result = ciContext.createCGImage(output, from: CGRect(x: 0, y: 0, width: targetW, height: targetH))
+        guard let scaledOutput = filter.outputImage else { return image }
+        // Enlarging a small bitmap leaves it soft; a light luminance sharpen restores the edges.
+        let output = scaledOutput.applyingFilter("CISharpenLuminance", parameters: [kCIInputSharpnessKey: 0.7])
+        guard let result = ciContext.createCGImage(output, from: CGRect(x: 0, y: 0, width: targetW, height: targetH))
         else { return image }
         let scaled = NSImage(cgImage: result, size: size)
         scaled.isTemplate = image.isTemplate
@@ -181,10 +219,16 @@ final class StripItemView: NSView, NSDraggingSource {
             // Resample once, with Lanczos, to the exact pixels the icon occupies on screen, so AppKit never
             // has to stretch or shrink the (oversampled) capture itself, which is what made it look soft.
             let sharp = Self.resampled(image, to: imageSize)
-            if original, sharp.isTemplate, let copy = sharp.copy() as? NSImage {
-                // "Original" shows the capture as drawn in the menu bar instead of tinting monochrome glyphs.
-                copy.isTemplate = false
-                imageView.image = copy
+            if original, sharp.isTemplate {
+                // Single-colour glyphs carry no colour of their own, so "colored" tints them with the owning
+                // app's icon colour (falling back to the glyph as captured when the app's icon is grey).
+                if let color = Self.accentColor(of: item) {
+                    imageView.image = sharp
+                    glyphTint = color
+                } else if let copy = sharp.copy() as? NSImage {
+                    copy.isTemplate = false
+                    imageView.image = copy
+                }
             } else {
                 imageView.image = sharp
             }
@@ -195,7 +239,7 @@ final class StripItemView: NSView, NSDraggingSource {
             imageSize = NSSize(width: 18 * scale, height: 18 * scale)
         }
         let size = NSSize(width: max(imageSize.width, 24), height: max(imageSize.height, 24))
-        imageView.contentTintColor = .labelColor
+        imageView.contentTintColor = glyphTint ?? .labelColor
         // Smooth, high-quality resampling when the capture is scaled to the strip's icon size.
         imageView.wantsLayer = true
         imageView.layer?.magnificationFilter = .trilinear
