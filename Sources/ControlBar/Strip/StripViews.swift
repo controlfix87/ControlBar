@@ -1,4 +1,5 @@
 import AppKit
+import CoreImage
 
 /// Borderless floating panel that never takes focus from the frontmost app.
 final class StripPanel: NSPanel {
@@ -139,6 +140,28 @@ final class StripItemView: NSView, NSDraggingSource {
     /// flat multiplier left icons visibly different sizes at the same "Icon size" setting.
     private static let referenceHeight: CGFloat = 16
 
+    private static let ciContext = CIContext()
+
+    /// `image` scaled to `size` points at the screen's pixel density using a Lanczos filter.
+    private static func resampled(_ image: NSImage, to size: NSSize) -> NSImage {
+        let density = NSScreen.main?.backingScaleFactor ?? 2
+        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return image }
+        let targetW = max(1, (size.width * density).rounded()), targetH = max(1, (size.height * density).rounded())
+        let source = CIImage(cgImage: cg)
+        let scaleY = targetH / source.extent.height
+        let aspect = (targetW / source.extent.width) / scaleY
+        guard let filter = CIFilter(name: "CILanczosScaleTransform") else { return image }
+        filter.setValue(source, forKey: kCIInputImageKey)
+        filter.setValue(scaleY, forKey: kCIInputScaleKey)
+        filter.setValue(aspect, forKey: kCIInputAspectRatioKey)
+        guard let output = filter.outputImage,
+              let result = ciContext.createCGImage(output, from: CGRect(x: 0, y: 0, width: targetW, height: targetH))
+        else { return image }
+        let scaled = NSImage(cgImage: result, size: size)
+        scaled.isTemplate = image.isTemplate
+        return scaled
+    }
+
     init(item: MenuBarItem, image: NSImage?, scale rawScale: CGFloat = 1, original: Bool = true) {
         self.item = item
         let scale = rawScale * Self.baseScale
@@ -152,16 +175,19 @@ final class StripItemView: NSView, NSDraggingSource {
         let imageSize: NSSize
         if let image, image.size.width > 0, image.size.height > 0 {
             // A captured picture of the real item, already padded like the menu bar.
-            // "Original" shows the capture as drawn in the menu bar instead of tinting monochrome glyphs.
-            if original, image.isTemplate, let copy = image.copy() as? NSImage {
-                copy.isTemplate = false
-                imageView.image = copy
-            } else {
-                imageView.image = image
-            }
             imageView.imageScaling = .scaleProportionallyUpOrDown
             let displayHeight = Self.referenceHeight * scale
             imageSize = NSSize(width: displayHeight * (image.size.width / image.size.height), height: displayHeight)
+            // Resample once, with Lanczos, to the exact pixels the icon occupies on screen, so AppKit never
+            // has to stretch or shrink the (oversampled) capture itself, which is what made it look soft.
+            let sharp = Self.resampled(image, to: imageSize)
+            if original, sharp.isTemplate, let copy = sharp.copy() as? NSImage {
+                // "Original" shows the capture as drawn in the menu bar instead of tinting monochrome glyphs.
+                copy.isTemplate = false
+                imageView.image = copy
+            } else {
+                imageView.image = sharp
+            }
         } else {
             // No picture available: show the owning app's icon.
             imageView.image = item.appIcon ?? NSImage(systemSymbolName: "questionmark.app", accessibilityDescription: nil)
