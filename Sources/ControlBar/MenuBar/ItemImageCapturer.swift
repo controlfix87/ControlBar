@@ -41,12 +41,9 @@ final class ItemImageCapturer {
     private static func capture(_ window: SCWindow) async -> NSImage? {
         let filter = SCContentFilter(desktopIndependentWindow: window)
         let config = SCStreamConfiguration()
-        // Capture with headroom for the strip's icon-size slider (up to 2x), which scales this
-        // image up in point-space — capturing at only the display's native density would upscale
-        // an already-native-resolution bitmap and blur it at larger strip scales. The extra margin
-        // (beyond the slider's own 2x ceiling) keeps icons crisp at "normal" size too, since
-        // ScreenCaptureKit's actual output can land a bit under the requested pixel dimensions.
-        let scale = CGFloat(filter.pointPixelScale) * 3
+        // Capture at the display's native pixel density. Asking ScreenCaptureKit for more just makes it
+        // upscale with its own (soft) filter; the strip resamples once, with Lanczos, to its final size.
+        let scale = CGFloat(filter.pointPixelScale)
         config.width = max(1, Int(window.frame.width * scale))
         config.height = max(1, Int(window.frame.height * scale))
         config.showsCursor = false
