@@ -170,6 +170,10 @@ final class StripItemView: NSView, NSDraggingSource {
         }
         let size = NSSize(width: max(imageSize.width, 24), height: max(imageSize.height, 24))
         imageView.contentTintColor = .labelColor
+        // Smooth, high-quality resampling when the capture is scaled to the strip's icon size.
+        imageView.wantsLayer = true
+        imageView.layer?.magnificationFilter = .trilinear
+        imageView.layer?.minificationFilter = .trilinear
         imageView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(imageView)
 
