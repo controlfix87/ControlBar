@@ -23,10 +23,9 @@ final class StripPanel: NSPanel {
 
 /// The ┃ glyph inside `DividerMarkPanel`; a click on it asks to start arranging.
 private final class DividerMarkView: NSImageView {
-    /// Receives whether ⌘ was held, so the caller can carry a ⌘-drag straight on to the real divider.
-    var onClick: ((_ commandHeld: Bool) -> Void)?
+    var onClick: (() -> Void)?
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override func mouseDown(with event: NSEvent) { onClick?(event.modifierFlags.contains(.command)) }
+    override func mouseDown(with event: NSEvent) { onClick?() }
 }
 
 /// A ┃ drawn on the menu bar itself, at the right edge of the stretched divider item (the boundary between
@@ -36,7 +35,7 @@ private final class DividerMarkView: NSImageView {
 final class DividerMarkPanel: NSPanel {
     private let markView = DividerMarkView()
     /// Called when the ┃ is clicked.
-    var onClick: ((_ commandHeld: Bool) -> Void)? {
+    var onClick: (() -> Void)? {
         get { markView.onClick }
         set { markView.onClick = newValue }
     }

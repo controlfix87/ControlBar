@@ -129,7 +129,8 @@ final class StatusBarController: NSObject {
         dividerItem = bar.statusItem(withLength: Self.dividerLength)
         dividerItem.autosaveName = "controlbar.divider"
         super.init()
-        dividerMark.onClick = { [weak self] commandHeld in self?.dividerMarkClicked(commandHeld: commandHeld) }
+        dividerMark.onClick = { [weak self] in self?.setArranging(true) }
+        installDividerGrabMonitors()
 
         for (item, action) in [(keepAwakeItem, #selector(keepAwakeClicked)), (chevronItem, #selector(chevronClicked)),
                                (dividerItem, #selector(dividerClicked))] {
@@ -251,7 +252,7 @@ final class StatusBarController: NSObject {
     }
 
     private func applyState() {
-        let shouldHide = !isArranging && revealCount == 0
+        let shouldHide = !isArranging && revealCount == 0 && !grabbingDivider
         if shouldHide != isHidingItems {
             if shouldHide {
                 if isOrderValid {
@@ -309,6 +310,43 @@ final class StatusBarController: NSObject {
         dividerMark.show(atBoundary: window.frame, appearance: window.contentView?.effectiveAppearance)
     }
 
+    // MARK: - ⌘-grab of the divider while the strip is open
+
+    /// While the strip is open the real ┃ is stretched off-screen and a click-through stand-in is drawn at
+    /// the boundary. Holding ⌘ over that stand-in brings the real divider back (un-stretched, in the same
+    /// spot) so a ⌘-drag grabs it with the very first press, no separate "arrange" click. It goes back to
+    /// hiding once ⌘ is released or the pointer leaves, and never while a button is held (mid-drag).
+    private var grabbingDivider = false
+    private var grabMonitors: [Any] = []
+
+    private func installDividerGrabMonitors() {
+        let mask: NSEvent.EventTypeMask = [.flagsChanged, .mouseMoved, .leftMouseUp, .leftMouseDragged]
+        if let m = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] _ in
+            MainActor.assumeIsolated { self?.evaluateDividerGrab() }
+        }) { grabMonitors.append(m) }
+        if let m = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { [weak self] event in
+            MainActor.assumeIsolated { self?.evaluateDividerGrab() }
+            return event
+        }) { grabMonitors.append(m) }
+    }
+
+    private func evaluateDividerGrab() {
+        let commandHeld = NSEvent.modifierFlags.contains(.command)
+        let buttonDown = NSEvent.pressedMouseButtons != 0
+        let mouse = NSEvent.mouseLocation
+        if grabbingDivider {
+            guard !buttonDown, let frame = dividerItem.button?.window?.frame else { return }
+            if !commandHeld || !frame.insetBy(dx: -24, dy: -8).contains(mouse) {
+                grabbingDivider = false
+                applyState()
+            }
+        } else if commandHeld, !buttonDown, isHidingItems, showsDividerWhileHidden,
+                  dividerMark.isVisible, dividerMark.frame.insetBy(dx: -4, dy: 0).contains(mouse) {
+            grabbingDivider = true
+            applyState()
+        }
+    }
+
     // MARK: - Clicks
 
     private var isSecondaryClick: Bool {
@@ -333,28 +371,6 @@ final class StatusBarController: NSObject {
             setArranging(true)
         } else {
             onShowStrip?()
-        }
-    }
-
-    /// The ┃ drawn while the strip is open was pressed. Arranging puts the real divider back on the bar
-    /// right where the mark was; with ⌘ held (and the button still down) the press is replayed onto it, so
-    /// a single ⌘-drag grabs the divider without a second click.
-    private func dividerMarkClicked(commandHeld: Bool) {
-        setArranging(true)
-        guard commandHeld else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
-            guard NSEvent.pressedMouseButtons & 1 != 0, let frame = self?.dividerFrameCG, frame.width > 0 else { return }
-            let screenHeight = NSScreen.screens.first?.frame.height ?? 0
-            let cursor = NSEvent.mouseLocation
-            let point = CGPoint(x: cursor.x, y: screenHeight - cursor.y)
-            // Hand the press over: release the one aimed at the mark, press again on the real divider.
-            for type in [CGEventType.leftMouseUp, .leftMouseDown] {
-                let target = type == .leftMouseDown ? CGPoint(x: min(max(point.x, frame.minX + 1), frame.maxX - 1), y: frame.midY) : point
-                guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: target, mouseButton: .left)
-                else { continue }
-                event.flags = .maskCommand
-                event.post(tap: .cghidEventTap)
-            }
         }
     }
 
