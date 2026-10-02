@@ -129,7 +129,7 @@ final class StatusBarController: NSObject {
         dividerItem = bar.statusItem(withLength: Self.dividerLength)
         dividerItem.autosaveName = "controlbar.divider"
         super.init()
-        dividerMark.onClick = { [weak self] in self?.setArranging(true) }
+        dividerMark.onClick = { [weak self] commandHeld in self?.dividerMarkClicked(commandHeld: commandHeld) }
 
         for (item, action) in [(keepAwakeItem, #selector(keepAwakeClicked)), (chevronItem, #selector(chevronClicked)),
                                (dividerItem, #selector(dividerClicked))] {
@@ -333,6 +333,28 @@ final class StatusBarController: NSObject {
             setArranging(true)
         } else {
             onShowStrip?()
+        }
+    }
+
+    /// The ┃ drawn while the strip is open was pressed. Arranging puts the real divider back on the bar
+    /// right where the mark was; with ⌘ held (and the button still down) the press is replayed onto it, so
+    /// a single ⌘-drag grabs the divider without a second click.
+    private func dividerMarkClicked(commandHeld: Bool) {
+        setArranging(true)
+        guard commandHeld else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+            guard NSEvent.pressedMouseButtons & 1 != 0, let frame = self?.dividerFrameCG, frame.width > 0 else { return }
+            let screenHeight = NSScreen.screens.first?.frame.height ?? 0
+            let cursor = NSEvent.mouseLocation
+            let point = CGPoint(x: cursor.x, y: screenHeight - cursor.y)
+            // Hand the press over: release the one aimed at the mark, press again on the real divider.
+            for type in [CGEventType.leftMouseUp, .leftMouseDown] {
+                let target = type == .leftMouseDown ? CGPoint(x: min(max(point.x, frame.minX + 1), frame.maxX - 1), y: frame.midY) : point
+                guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: target, mouseButton: .left)
+                else { continue }
+                event.flags = .maskCommand
+                event.post(tap: .cghidEventTap)
+            }
         }
     }
 

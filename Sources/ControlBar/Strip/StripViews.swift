@@ -23,9 +23,10 @@ final class StripPanel: NSPanel {
 
 /// The ┃ glyph inside `DividerMarkPanel`; a click on it asks to start arranging.
 private final class DividerMarkView: NSImageView {
-    var onClick: (() -> Void)?
+    /// Receives whether ⌘ was held, so the caller can carry a ⌘-drag straight on to the real divider.
+    var onClick: ((_ commandHeld: Bool) -> Void)?
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override func mouseDown(with event: NSEvent) { onClick?() }
+    override func mouseDown(with event: NSEvent) { onClick?(event.modifierFlags.contains(.command)) }
 }
 
 /// A ┃ drawn on the menu bar itself, at the right edge of the stretched divider item (the boundary between
@@ -35,7 +36,7 @@ private final class DividerMarkView: NSImageView {
 final class DividerMarkPanel: NSPanel {
     private let markView = DividerMarkView()
     /// Called when the ┃ is clicked.
-    var onClick: (() -> Void)? {
+    var onClick: ((_ commandHeld: Bool) -> Void)? {
         get { markView.onClick }
         set { markView.onClick = newValue }
     }
@@ -52,7 +53,7 @@ final class DividerMarkPanel: NSPanel {
         animationBehavior = .none
         markView.image = StatusBarController.dividerImage
         markView.imageScaling = .scaleNone
-        markView.imageAlignment = .alignCenter
+        markView.imageAlignment = .alignRight
         markView.contentTintColor = .labelColor
         markView.toolTip = "Click to arrange icons, then hold ⌘ and drag the ┃"
         contentView = markView
@@ -64,10 +65,11 @@ final class DividerMarkPanel: NSPanel {
     /// `barFrame` is the divider item's window frame (AppKit coordinates); its right edge is the boundary.
     func show(atBoundary barFrame: NSRect, appearance: NSAppearance?) {
         self.appearance = appearance
-        let width = StatusBarController.dividerImage.size.width
-        // Sit just inside the hidden side, so the glyph never overlaps the first visible icon. The panel is
-        // the full menu bar height so it's an easy click target.
-        setFrame(NSRect(x: barFrame.maxX - width + 1, y: barFrame.minY, width: width, height: barFrame.height), display: true)
+        let glyphWidth = StatusBarController.dividerImage.size.width
+        // The click target is wider than the 2 pt glyph (and full menu bar height) so it's easy to hit. It
+        // extends to the hidden side only, so the glyph never overlaps the first visible icon.
+        let width = glyphWidth + 12
+        setFrame(NSRect(x: barFrame.maxX - glyphWidth + 1 - 12, y: barFrame.minY, width: width, height: barFrame.height), display: true)
         orderFrontRegardless()
     }
 }
