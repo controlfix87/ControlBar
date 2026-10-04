@@ -91,7 +91,7 @@ pkill -x ControlBar; open build/ControlBar.app
   cat /some/dir/report.txt         # REVEALED and HIDDEN sections; PNGs in /some/dir/{revealed,hidden}/
   open build/ControlBar.app             # restart the normal instance afterwards
   ```
-- Launch the app with `open`, not by running the binary directly. Otherwise TCC treats the calling process (Claude) as responsible and the permissions don't apply.
+- Launch the app with `open`, not by running the binary directly. Otherwise TCC treats the calling process (the agent) as responsible and the permissions don't apply.
 - **Limits of the agent environment:** `screencapture` fails ("could not create image from rect"), and the shell has no Accessibility permission, so you can't click status items or send keys. Ask the user to test anything interactive, or have them paste *Settings → About → Copy Diagnostics*.
 - `swift scripts/make-icon.swift` regenerates `Resources/AppIcon.icns`, which is already generated: a bird on a controlbar, orange gradient.
 - Useful check: `pmset -g assertions | grep -i controlbar`.
