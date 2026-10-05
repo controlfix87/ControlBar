@@ -114,17 +114,47 @@ final class StripBackgroundView: NSVisualEffectView {
     }
 }
 
+/// The picture that follows the pointer while a strip icon is ⌘-dragged towards the menu bar.
+private final class DragGhostPanel: NSPanel {
+    init(image: NSImage) {
+        super.init(contentRect: NSRect(origin: .zero, size: image.size), styleMask: [.borderless, .nonactivatingPanel],
+                   backing: .buffered, defer: true)
+        level = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue + 1)
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        backgroundColor = .clear
+        isOpaque = false
+        hasShadow = false
+        ignoresMouseEvents = true
+        isReleasedWhenClosed = false
+        animationBehavior = .none
+        let view = NSImageView(image: image)
+        view.imageScaling = .scaleNone
+        contentView = view
+    }
+
+    func follow(_ point: NSPoint) {
+        setFrameOrigin(NSPoint(x: point.x - frame.width / 2, y: point.y - frame.height / 2))
+        if !isVisible { orderFrontRegardless() }
+    }
+
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+}
+
 /// One clickable icon in the strip. ⌘-drag it onto the menu bar to move it out of the hidden section.
-final class StripItemView: NSView, NSDraggingSource {
-    static let dragType = NSPasteboard.PasteboardType("com.controlfix.bar.strip-item")
+final class StripItemView: NSView {
 
     let item: MenuBarItem
     var onActivate: ((MenuBarItem, _ secondary: Bool) -> Void)?
     var onDragBegan: (() -> Void)?
+    /// Called as the pointer moves (AppKit screen coordinates). Returning true means the real menu bar
+    /// icon has taken over the drag: this view stops tracking and gets no further events for it.
+    var onDragMoved: ((MenuBarItem, _ screenPoint: NSPoint) -> Bool)?
     /// `screenPoint` is where the mouse was released, in AppKit screen coordinates.
     var onDragEnded: ((MenuBarItem, _ screenPoint: NSPoint) -> Void)?
     private var mouseDownPoint: NSPoint = .zero
     private var isDragging = false
+    private var dragGhost: DragGhostPanel?
 
     private let imageView = NSImageView()
     private var glyphTint: NSColor?
@@ -300,19 +330,26 @@ final class StripItemView: NSView, NSDraggingSource {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard event.modifierFlags.contains(.command), !isDragging,
-              hypot(event.locationInWindow.x - mouseDownPoint.x, event.locationInWindow.y - mouseDownPoint.y) > 3
-        else { return }
-        isDragging = true
-        isHovered = false
-        onDragBegan?()
-        let pasteboardItem = NSPasteboardItem()
-        pasteboardItem.setString(item.id, forType: Self.dragType)
-        let dragItem = NSDraggingItem(pasteboardWriter: pasteboardItem)
-        dragItem.setDraggingFrame(bounds, contents: dragImage())
-        let session = beginDraggingSession(with: [dragItem], event: event, source: self)
-        // Nothing accepts the drop (the menu bar isn't a drag destination); ControlBar acts on where it ended.
-        session.animatesToStartingPositionsOnCancelOrFail = false
+        if !isDragging {
+            guard event.modifierFlags.contains(.command),
+                  hypot(event.locationInWindow.x - mouseDownPoint.x, event.locationInWindow.y - mouseDownPoint.y) > 3
+            else { return }
+            isDragging = true
+            isHovered = false
+            onDragBegan?()
+            dragGhost = DragGhostPanel(image: dragImage())
+        }
+        let point = NSEvent.mouseLocation
+        dragGhost?.follow(point)
+        // Once the pointer is on the menu bar the real icon takes over and follows it natively.
+        if onDragMoved?(item, point) == true { stopTrackingDrag() }
+    }
+
+    private func stopTrackingDrag() {
+        isDragging = false
+        isPressed = false
+        dragGhost?.orderOut(nil)
+        dragGhost = nil
     }
 
     /// The icon on a soft pill, so it stays readable over any wallpaper while it follows the pointer.
@@ -332,17 +369,12 @@ final class StripItemView: NSView, NSDraggingSource {
         }
     }
 
-    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
-        .move
-    }
-
-    func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
-        isDragging = false
-        isPressed = false
-        onDragEnded?(item, screenPoint)
-    }
-
     override func mouseUp(with event: NSEvent) {
+        if isDragging {
+            stopTrackingDrag()
+            onDragEnded?(item, NSEvent.mouseLocation)
+            return
+        }
         isPressed = false
         if bounds.contains(convert(event.locationInWindow, from: nil)) {
             onActivate?(item, event.modifierFlags.contains(.control))

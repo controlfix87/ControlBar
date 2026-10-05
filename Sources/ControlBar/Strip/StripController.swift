@@ -23,6 +23,8 @@ final class StripController {
     private var isHovering = false
     /// A strip icon is being ⌘-dragged out; the strip must not auto-hide from under it.
     private var isDragging = false
+    /// The live hand-over to the real icon failed during this drag; fall back to moving it on drop.
+    private var liveDragUnavailable = false
     private var loadGeneration = 0
     private(set) var isVisible = false
     /// Opens ControlBar's own Settings on the Permissions tab.
@@ -240,6 +242,7 @@ final class StripController {
                     }
                 }
                 view.onDragBegan = { [weak self] in self?.dragBegan() }
+                view.onDragMoved = { [weak self] item, point in self?.dragMoved(item, to: point) ?? false }
                 view.onDragEnded = { [weak self] item, point in self?.dragEnded(item, at: point) }
                 return view
             }
@@ -277,13 +280,35 @@ final class StripController {
 
     private func dragBegan() {
         isDragging = true
+        liveDragUnavailable = false
         hideTimer?.invalidate()
         hideTimer = nil
         pendingHideTask?.cancel()
         pendingHideTask = nil
     }
 
-    /// An icon was ⌘-dragged out of the strip. If it was let go over the menu bar (right of the ┃), move
+    /// The pointer moved during a ⌘-drag. Once it is on the menu bar, right of the ┃, the real icon is
+    /// handed the drag: macOS then moves it live under the pointer until the user lets go. Returns
+    /// whether that hand-over happened.
+    private func dragMoved(_ item: MenuBarItem, to screenPoint: NSPoint) -> Bool {
+        guard !liveDragUnavailable,
+              let screen = NSScreen.screens.first(where: { $0.frame.contains(screenPoint) }),
+              screen.frame.maxY - screenPoint.y <= max(screen.frame.maxY - screen.visibleFrame.maxY, 24),
+              let boundary = statusBar.dividerFrameCG?.maxX
+        else { return false }
+        let point = StatusBarController.toCG(NSRect(origin: screenPoint, size: .zero)).origin
+        guard point.x >= boundary + 2 else { return false }
+        let started = activator.beginLiveDrag(item, at: point) { [weak self] in
+            self?.isDragging = false
+            self?.hide(animated: false)
+        }
+        // Don't retry on every mouse move; dropping on the bar still moves the icon (see `dragEnded`).
+        if !started { liveDragUnavailable = true }
+        return started
+    }
+
+    /// An icon was ⌘-dragged out of the strip without the live hand-over (it was let go left of the ┃,
+    /// or the hand-over isn't available). If it was let go over the menu bar (right of the ┃), move
     /// the real icon there; anywhere else it's a cancelled drag and the strip carries on.
     private func dragEnded(_ item: MenuBarItem, at screenPoint: NSPoint) {
         isDragging = false

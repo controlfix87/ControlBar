@@ -70,21 +70,88 @@ final class ItemActivator {
             // Everything right of the divider keeps its position when the hidden section is revealed
             // (the bar is right-anchored), so the drop point stays valid across the reveal.
             let boundary = statusBar.dividerFrameCG?.maxX ?? 0
-            statusBar.beginTemporaryReveal()
             var result = MoveResult.failed
-            if let frame = await waitUntilReachable(item) {
+            // First try without revealing anything: a ⌘-drag posted at the session level and addressed
+            // to the item's window works even while that window is pushed off-screen. This is the only
+            // way to move an icon that would sit behind the notch (or off the left edge) when revealed.
+            if let frame = AX.frame(item.element) {
                 let target = CGPoint(x: max(dropX, boundary + 4), y: frame.midY)
-                await Self.commandDrag(from: CGPoint(x: frame.midX, y: frame.midY), to: target)
-                result = await didLand(item, rightOf: boundary) ? .moved : .failed
-                NSLog("ControlBar: moved \(item.displayName) from \(frame) to x=\(target.x): \(result)")
-            } else {
-                result = .unreachable
-                NSLog("ControlBar: \(item.displayName) can't be reached while revealed")
+                await Self.commandDragInPlace(item, from: CGPoint(x: frame.midX, y: frame.midY), to: target)
+                if await didLand(item, rightOf: boundary) { result = .moved }
+                NSLog("ControlBar: moved \(item.displayName) in place from \(frame) to x=\(target.x): \(result)")
             }
-            statusBar.endTemporaryReveal()
+            if result != .moved {
+                // Fallback: reveal the hidden section and drag the icon like a user would.
+                statusBar.beginTemporaryReveal()
+                if let frame = await waitUntilReachable(item) {
+                    let target = CGPoint(x: max(dropX, boundary + 4), y: frame.midY)
+                    await Self.commandDrag(from: CGPoint(x: frame.midX, y: frame.midY), to: target)
+                    result = await didLand(item, rightOf: boundary) ? .moved : .failed
+                    NSLog("ControlBar: moved \(item.displayName) from \(frame) to x=\(target.x): \(result)")
+                } else {
+                    result = .unreachable
+                    NSLog("ControlBar: \(item.displayName) can't be reached while revealed")
+                }
+                statusBar.endTemporaryReveal()
+            }
             isBusy = false
             completion(result)
         }
+    }
+
+    /// Hands the user's in-progress drag (pointer at `point`, global top-left coordinates) over to the
+    /// real item, so macOS runs its own live ⌘-drag on it from here. Returns false, having done nothing,
+    /// when that isn't possible; the caller then falls back to `moveToMenuBar` when the drag ends.
+    /// `onEnded` fires once, when the user lets go.
+    func beginLiveDrag(_ item: MenuBarItem, at point: CGPoint, onEnded: @escaping () -> Void) -> Bool {
+        guard !isBusy else { return false }
+        let windows = MenuBarScanner.statusWindows()
+        let center = AX.frame(item.element).map { CGPoint(x: $0.midX, y: $0.midY) }
+        let window = item.windowID.flatMap { id in windows.first { $0.id == id } }
+            ?? center.flatMap { c in windows.first { $0.frame.width < 1000 && $0.frame.contains(c) } }
+        guard let window else { return false }
+        let started = LiveDragTap.shared.begin(window: window, at: point) { [weak self] in
+            self?.isBusy = false
+            NSLog("ControlBar: live drag of \(item.displayName) ended at \(AX.frame(item.element).map { "\($0)" } ?? "?")")
+            onEnded()
+        }
+        if started {
+            isBusy = true
+            NSLog("ControlBar: live drag of \(item.displayName) started at \(point)")
+        }
+        return started
+    }
+
+    /// ⌘-drags an item to `end` without it having to be on-screen. The events go in at the session level
+    /// and name the item's window explicitly, so the window server delivers them to that window wherever
+    /// it is; the HID-level drag in `commandDrag` can't do this, because the pointer can't reach a window
+    /// that is off-screen or not drawn (behind the notch).
+    private static func commandDragInPlace(_ item: MenuBarItem, from start: CGPoint, to end: CGPoint) async {
+        let windows = MenuBarScanner.statusWindows()
+        let startWindow = item.windowID.flatMap { id in windows.first { $0.id == id } }
+            ?? windows.first { $0.frame.width < 1000 && $0.frame.contains(start) }
+        guard let startWindow else { return }
+        let endWindow = windows.first { $0.isOnScreen && $0.frame.contains(end) }
+        let source = CGEventSource(stateID: .hidSystemState)
+        let original = CGEvent(source: nil)?.location
+        func post(_ type: CGEventType, _ point: CGPoint, _ window: StatusWindow) {
+            guard let event = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: point, mouseButton: .left) else { return }
+            event.flags = .maskCommand
+            event.setIntegerValueField(.mouseEventClickState, value: 1)
+            event.setIntegerValueField(.eventSourceUserData, value: LiveDragTap.eventTag)
+            event.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(window.id))
+            event.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(window.id))
+            event.setIntegerValueField(.eventTargetUnixProcessID, value: Int64(window.ownerPID))
+            // Undocumented window-ID field the window server uses to route the event (same trick as Ice).
+            if let field = CGEventField(rawValue: 0x33) { event.setIntegerValueField(field, value: Int64(window.id)) }
+            event.post(tap: .cgSessionEventTap)
+        }
+        post(.leftMouseDown, start, startWindow)
+        try? await Task.sleep(for: .milliseconds(100))
+        post(.leftMouseDragged, end, startWindow)
+        try? await Task.sleep(for: .milliseconds(100))
+        post(.leftMouseUp, end, endWindow ?? startWindow)
+        if let original { CGWarpMouseCursorPosition(original) }
     }
 
     /// The item is on-screen and actually drawn (icons behind the notch report a frame but aren't).
