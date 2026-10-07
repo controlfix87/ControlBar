@@ -68,7 +68,10 @@ final class DividerMarkPanel: NSPanel {
         // The click target is wider than the 2 pt glyph (and full menu bar height) so it's easy to hit. It
         // extends to the hidden side only, so the glyph never overlaps the first visible icon.
         let width = glyphWidth + 12
-        setFrame(NSRect(x: barFrame.maxX - glyphWidth + 1 - 12, y: barFrame.minY, width: width, height: barFrame.height), display: true)
+        // The real divider centres its glyph in its own slot (`dividerWindowWidth` wide); match that spot so the ┃
+        // doesn't shift when the real divider replaces this stand-in.
+        let rightEdge = barFrame.maxX - StatusBarController.dividerWindowWidth / 2 + glyphWidth / 2
+        setFrame(NSRect(x: rightEdge - width, y: barFrame.minY, width: width, height: barFrame.height), display: true)
         orderFrontRegardless()
     }
 }
@@ -154,6 +157,8 @@ final class StripItemView: NSView {
     var onDragEnded: ((MenuBarItem, _ screenPoint: NSPoint) -> Void)?
     private var mouseDownPoint: NSPoint = .zero
     private var isDragging = false
+    /// The real icon owns this drag now; any stray drag events still reaching this view must not restart a ghost.
+    private var handedOver = false
     private var dragGhost: DragGhostPanel?
 
     private let imageView = NSImageView()
@@ -326,10 +331,12 @@ final class StripItemView: NSView {
     override func mouseExited(with event: NSEvent) { isHovered = false }
     override func mouseDown(with event: NSEvent) {
         isPressed = true
+        handedOver = false
         mouseDownPoint = event.locationInWindow
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if handedOver { return }
         if !isDragging {
             guard event.modifierFlags.contains(.command),
                   hypot(event.locationInWindow.x - mouseDownPoint.x, event.locationInWindow.y - mouseDownPoint.y) > 3
@@ -339,10 +346,26 @@ final class StripItemView: NSView {
             onDragBegan?()
             dragGhost = DragGhostPanel(image: dragImage())
         }
+        // The mouse-up can go to another window (the hand-over, a rebuilt strip); never leave the ghost up.
+        guard NSEvent.pressedMouseButtons & 1 != 0 else { stopTrackingDrag(); return }
         let point = NSEvent.mouseLocation
         dragGhost?.follow(point)
         // Once the pointer is on the menu bar the real icon takes over and follows it natively.
-        if onDragMoved?(item, point) == true { stopTrackingDrag() }
+        if onDragMoved?(item, point) == true {
+            handedOver = true
+            stopTrackingDrag()
+        }
+    }
+
+    /// The strip can be torn down or rebuilt mid-drag (hide, refresh, the hand-over); the ghost must not outlive it.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil, isDragging { stopTrackingDrag() }
+    }
+
+    deinit {
+        let ghost = dragGhost
+        DispatchQueue.main.async { ghost?.orderOut(nil) }
     }
 
     private func stopTrackingDrag() {
@@ -370,6 +393,7 @@ final class StripItemView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        handedOver = false
         if isDragging {
             stopTrackingDrag()
             onDragEnded?(item, NSEvent.mouseLocation)

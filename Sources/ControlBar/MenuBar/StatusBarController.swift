@@ -18,6 +18,8 @@ import SwiftUI
 final class StatusBarController: NSObject {
     static let hiddenLength: CGFloat = 10_000
     static let dividerLength: CGFloat = 12
+    /// Width of the divider's window once un-stretched: the item plus the status bar's side padding (measured).
+    static let dividerWindowWidth: CGFloat = 28
 
     private let prefs: Preferences
     private let sleep: SleepPreventer
@@ -301,6 +303,23 @@ final class StatusBarController: NSObject {
     /// ┃ is drawn by a click-through overlay at the boundary (the stretched item's right edge) —
     /// but only while the strip is open. Otherwise the real item's glyph is on-screen and needs no help.
     private func updateDividerMark() {
+        // Changing the divider's length resizes its window a beat late (and from the wrong edge, so it can sit
+        // off-screen meanwhile). Until it has settled at the boundary, leave the stand-in as it is and look
+        // again, so the ┃ never blinks out or jumps to a stale spot.
+        if let expected = settledBoundary, let frame = dividerItem.button?.window?.frame {
+            let settled = abs(frame.maxX - expected) <= 3 && (grabbingDivider ? frame.width < 100 : frame.width > 1000)
+            if !settled, settleChecks < 60 {
+                // Going back to hidden: put the stand-in back at the known boundary straight away.
+                if !grabbingDivider, isHidingItems, showsDividerWhileHidden, !dividerMark.isVisible {
+                    dividerMark.setFrame(grabZone, display: true)
+                    dividerMark.orderFrontRegardless()
+                }
+                settleChecks += 1
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in self?.updateDividerMark() }
+                return
+            }
+            if !grabbingDivider { settledBoundary = nil }
+        }
         guard isHidingItems, showsDividerWhileHidden,
               let window = dividerItem.button?.window, window.frame.width > 0
         else {
@@ -310,13 +329,23 @@ final class StatusBarController: NSObject {
         dividerMark.show(atBoundary: window.frame, appearance: window.contentView?.effectiveAppearance)
     }
 
+    /// Right edge the divider item's window should have once a length change has taken effect.
+    private var settledBoundary: CGFloat?
+    private var settleChecks = 0
+
     // MARK: - ⌘-grab of the divider while the strip is open
 
     /// While the strip is open the real ┃ is stretched off-screen and a click-through stand-in is drawn at
     /// the boundary. Holding ⌘ over that stand-in brings the real divider back (un-stretched, in the same
     /// spot) so a ⌘-drag grabs it with the very first press, no separate "arrange" click. It goes back to
     /// hiding once ⌘ is released or the pointer leaves, and never while a button is held (mid-drag).
-    private var grabbingDivider = false
+    private var grabbingDivider = false {
+        didSet { if grabbingDivider != oldValue { onDividerGrabChanged?(grabbingDivider) } }
+    }
+    /// ⌘ is held over the ┃ (real divider brought back); the strip must stay open until that ends.
+    var isGrabbingDivider: Bool { grabbingDivider }
+    var onDividerGrabChanged: ((Bool) -> Void)?
+    private var grabZone = NSRect.zero
     private var grabMonitors: [Any] = []
 
     private func installDividerGrabMonitors() {
@@ -335,13 +364,19 @@ final class StatusBarController: NSObject {
         let buttonDown = NSEvent.pressedMouseButtons != 0
         let mouse = NSEvent.mouseLocation
         if grabbingDivider {
-            guard !buttonDown, let frame = dividerItem.button?.window?.frame else { return }
-            if !commandHeld || !frame.insetBy(dx: -24, dy: -8).contains(mouse) {
+            guard !buttonDown else { return }
+            // Judge "still over the ┃" against the stand-in's spot, not the live item window: that window
+            // is mid-resize right after the grab starts, and a stale frame made the divider drop out at once.
+            if !commandHeld || !grabZone.insetBy(dx: -24, dy: -8).contains(mouse) {
                 grabbingDivider = false
+                settleChecks = 0
                 applyState()
             }
         } else if commandHeld, !buttonDown, isHidingItems, showsDividerWhileHidden,
                   dividerMark.isVisible, dividerMark.frame.insetBy(dx: -4, dy: 0).contains(mouse) {
+            grabZone = dividerMark.frame
+            settledBoundary = dividerItem.button?.window?.frame.maxX
+            settleChecks = 0
             grabbingDivider = true
             applyState()
         }

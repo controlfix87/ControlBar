@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusBar.onOpenAbout = { [weak self] in self?.openSettings(tab: .about) }
         statusBar.onOpenPermissions = { [weak self] in self?.openSettings(tab: .permissions) }
         strip.onOpenPermissions = { [weak self] in self?.openSettings(tab: .permissions) }
+        statusBar.onDividerGrabChanged = { [weak self] grabbing in self?.strip.dividerGrabChanged(grabbing) }
         statusBar.onArrangingChanged = { [weak self] arranging in
             guard let self else { return }
             if arranging {

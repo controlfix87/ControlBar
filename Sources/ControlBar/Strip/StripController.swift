@@ -278,6 +278,19 @@ final class StripController {
 
     // MARK: - Dragging icons out
 
+    /// ⌘ over the ┃ keeps the strip open; once the grab ends the usual auto-hide countdown starts again.
+    func dividerGrabChanged(_ grabbing: Bool) {
+        guard isVisible else { return }
+        if grabbing {
+            hideTimer?.invalidate()
+            hideTimer = nil
+            pendingHideTask?.cancel()
+            pendingHideTask = nil
+        } else if !isHovering {
+            restartHideTimer()
+        }
+    }
+
     private func dragBegan() {
         isDragging = true
         liveDragUnavailable = false
@@ -360,7 +373,7 @@ final class StripController {
     private func restartHideTimer(for content: Content? = nil) {
         hideTimer?.invalidate()
         hideTimer = nil
-        if isDragging || (isHovering && prefs.pauseWhileHovering) { return }
+        if isDragging || statusBar.isGrabbingDivider || (isHovering && prefs.pauseWhileHovering) { return }
         var delay = prefs.autoHideDelay
         if case .message = content { delay = max(delay, 8) }
         let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
@@ -385,7 +398,7 @@ final class StripController {
     /// on screen for an unrelated reason (or a menu macOS never reports as closed) reads as "a
     /// menu is still open" forever, permanently stranding the reveal.
     private func hideAfterMenusClose() {
-        guard !isDragging else { return }
+        guard !isDragging, !statusBar.isGrabbingDivider else { return }
         pendingHideTask?.cancel()
         let baseline = ItemActivator.overlayWindowIDs()
         NSLog("ControlBar DIAG: hideAfterMenusClose called, baselineCount=\(baseline.count)")
